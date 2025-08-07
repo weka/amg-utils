@@ -365,6 +365,7 @@ def benchmark_chunk_size(
     profiler_type: str = "pyinstrument",
     detailed_timing: bool = True,
     use_weka: bool = True,
+    use_local_cpu: bool = False,
     weka_path: str = "/mnt/weka/bench-cache",
     cufile_buffer_size: int = 16384,
     gds_io_threads: int = 4,
@@ -392,7 +393,8 @@ def benchmark_chunk_size(
         use_weka=use_weka,
         weka_path=weka_path,
         cufile_buffer_size=cufile_buffer_size,
-        gds_io_threads=gds_io_threads
+        gds_io_threads=gds_io_threads,
+        local_cpu=use_local_cpu
     )
     metadata = setup_lmcache_metadata(chunk_size=chunk_size, num_layers=num_layers)
     
@@ -633,6 +635,7 @@ def run_comprehensive_benchmark(
     profiler_type: str = "pyinstrument",
     output_file: Optional[str] = None,
     use_weka: bool = True,
+    use_local_cpu: bool = False,
     weka_path: str = "/mnt/weka/bench-cache",
     cufile_buffer_size: int = 16384,
     gds_io_threads: int = 4,
@@ -664,6 +667,7 @@ def run_comprehensive_benchmark(
                     enable_profiling=enable_profiling,
                     profiler_type=profiler_type,
                     use_weka=use_weka,
+                    use_local_cpu=use_local_cpu,
                     weka_path=weka_path,
                     cufile_buffer_size=cufile_buffer_size,
                     gds_io_threads=gds_io_threads,
@@ -773,8 +777,14 @@ def main():
     parser.add_argument(
         "--use-weka",
         action="store_true",
-        default=True,
-        help="Use Weka backend instead of local CPU (default: True)"
+        default=False,
+        help="Use Weka backend (default: False, unless neither backend is specified)"
+    )
+    
+    parser.add_argument(
+        "--no-weka",
+        action="store_true",
+        help="Explicitly disable Weka backend"
     )
     
     parser.add_argument(
@@ -872,14 +882,41 @@ def main():
     print(f"Model configuration: {args.num_layers} layers, {kb_per_token:.1f} KB per token")
     
     # Determine backend configuration
-    use_weka = not args.use_local_cpu  # Use Weka unless explicitly told to use local CPU
+    use_weka = args.use_weka
+    use_local_cpu = args.use_local_cpu
     
-    backend_info = "Weka" if use_weka else "Local CPU"
-    print(f"Using {backend_info} backend")
+    # Apply --no-weka flag
+    if args.no_weka:
+        use_weka = False
+    
+    # If neither backend is explicitly specified, default to Weka for backward compatibility
+    if not use_weka and not use_local_cpu:
+        use_weka = True
+        print("INFO: No backend explicitly specified, defaulting to Weka backend")
+    
+    # Print warning if both backends are enabled
+    if use_weka and use_local_cpu:
+        print("WARNING: Both Weka and Local CPU backends are enabled. This may cause unexpected behavior.")
+        print("  Data will be stored/retrieved from both backends according to LMCache's backend priority.")
+    
+    # Determine backend description for display
+    if use_weka and use_local_cpu:
+        backend_info = "Weka + Local CPU"
+    elif use_weka:
+        backend_info = "Weka"
+    elif use_local_cpu:
+        backend_info = "Local CPU"
+    else:
+        backend_info = "No backend (may cause errors)"
+        print("WARNING: No storage backend enabled! This will likely cause errors.")
+    
+    print(f"Using {backend_info} backend(s)")
     if use_weka:
         print(f"  Weka path: {args.weka_path}")
         print(f"  CuFile buffer: {args.cufile_buffer_size} MB")
         print(f"  GDS I/O threads: {args.gds_io_threads}")
+    if use_local_cpu:
+        print(f"  Local CPU backend enabled")
     
     if args.enable_profiling:
         print(f"Advanced profiling enabled with {args.profiler_type}")
@@ -898,6 +935,7 @@ def main():
         profiler_type=args.profiler_type,
         output_file=args.output,
         use_weka=use_weka,
+        use_local_cpu=use_local_cpu,
         weka_path=args.weka_path,
         cufile_buffer_size=args.cufile_buffer_size,
         gds_io_threads=args.gds_io_threads,
