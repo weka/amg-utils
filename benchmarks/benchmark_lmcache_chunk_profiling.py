@@ -9,9 +9,11 @@ Uses pyinstrument for statistical profiling and optional line_profiler for line-
 These tools provide more accurate and less variant results compared to cProfile.
 
 Model Configuration:
-- Uses a small test model (2 layers, 32 heads, 128 head_size) to generate ~8MB test files
-- Data size per token: 2 layers * 2 (K,V) * 32 heads * 128 head_size * 2 bytes = 32KB/token
-- Default token counts (256, 512, 1024, 2048) generate files from 8MB to 64MB
+- Configurable number of layers (default: 2 layers, use --num-layers to adjust)
+- With 2 layers: Data size per token = 2 layers * 2 (K,V) * 32 heads * 128 head_size * 2 bytes = 32KB/token
+- With 32 layers: Data size per token = 32 layers * 2 (K,V) * 32 heads * 128 head_size * 2 bytes = 512KB/token
+- Default token counts (256, 512, 1024, 2048) with 2 layers generate files from 8MB to 64MB
+- Same token counts with 32 layers generate files from 128MB to 1GB
 """
 
 #
@@ -80,14 +82,12 @@ class ProfilingResults:
     chunk_size: int
     num_tokens: int
     num_chunks: int
-    store_time: float
     retrieve_time: float
     throughput_gbps: float
     data_size_mb: float
     detailed_timings: Dict[str, float]
     profiling_output: Optional[str] = None
     # Add error tracking
-    storage_errors: int = 0
     memory_errors: int = 0
     error_details: List[str] = None
 
@@ -191,7 +191,7 @@ def generate_kv_cache_paged_tensors(
     num_blocks: int,
     device: str = "cuda",
     block_size: int = 16,
-    num_layers: int = 2,  # Reduced from 32 to 2 for smaller files
+    num_layers: int = 2,
     num_heads: int = 32,
     head_size: int = 128,
     dtype: torch.dtype = torch.bfloat16
@@ -263,14 +263,19 @@ def setup_lmcache_metadata(
     model_name: str = "benchmarkModel",
     world_size: int = 1,
     worker_id: int = 0,
-    num_layers: int = 2,  # Reduced from 32 to 2 for smaller files
+    num_layers: int = 2,
     num_heads: int = 32,
     head_size: int = 128,
     chunk_size: int = 256
 ) -> LMCacheEngineMetadata:
     """Setup LMCache metadata"""
+    # Include num_layers in model_name to ensure different layer configurations 
+    # use different cache keys and don't share cache files
+    # Note: Can't use '_' as storage backend has assertion against it
+    model_name_with_layers = f"{model_name}-layers{num_layers}"
+    
     return LMCacheEngineMetadata(
-        model_name=model_name,
+        model_name=model_name_with_layers,
         world_size=world_size,
         worker_id=worker_id,
         fmt="vllm",
@@ -282,15 +287,74 @@ def setup_lmcache_metadata(
 
 def clear_weka_cache_directory(weka_path: str, force: bool = False):
     """Clear the Weka cache directory to avoid corrupted file issues"""
-    cache_dir = os.path.join(weka_path, "*")
     if force or input(f"Clear cache directory {weka_path}? (y/N): ").lower().startswith('y'):
         print(f"Clearing cache directory: {weka_path}")
         try:
             import subprocess
-            subprocess.run(["rm", "-rf", cache_dir], check=False, capture_output=True)
-            print("Cache directory cleared successfully")
+            import glob
+            
+            # Use glob to expand the wildcard pattern and remove each item
+            items_to_remove = glob.glob(os.path.join(weka_path, "*"))
+            if items_to_remove:
+                subprocess.run(["rm", "-rf"] + items_to_remove, check=False, capture_output=True)
+                print(f"Cache directory cleared successfully ({len(items_to_remove)} items removed)")
+            else:
+                print("Cache directory was already empty")
         except Exception as e:
             print(f"Warning: Failed to clear cache directory: {e}")
+
+
+def enhanced_store_with_wait(engine, tokens, kv_cache, slot_mapping, timeout_seconds=30):
+    """
+    Enhanced store operation that waits for completion.
+    This works around the fact that engine.store() doesn't return futures.
+    """
+    
+    try:
+        # Call the original store method
+        engine.store(
+            tokens,
+            kvcaches=kv_cache,
+            slot_mapping=slot_mapping
+        )
+        
+        # Now wait for the storage to complete by monitoring put_tasks
+        storage_backends = engine.storage_manager.storage_backends
+        start_time = time.perf_counter()
+        
+        while time.perf_counter() - start_time < timeout_seconds:
+            all_tasks_done = True
+            
+            for backend_name, backend in storage_backends.items():
+                try:
+                    # Check if this backend has pending put tasks
+                    if hasattr(backend, 'put_tasks') and hasattr(backend, 'put_lock'):
+                        with backend.put_lock:
+                            if len(backend.put_tasks) > 0:
+                                all_tasks_done = False
+                                break
+                except Exception:
+                    # If we can't check the backend, continue
+                    continue
+            
+            if all_tasks_done:
+                return True
+            
+            # Brief sleep to avoid busy waiting
+            time.sleep(0.05)
+        
+        # Timeout reached - return False to indicate we're not sure if complete
+        return False
+        
+    except Exception as e:
+        # Re-raise the original exception
+        raise e
+
+
+
+
+
+
 
 
 def benchmark_chunk_size(
@@ -306,11 +370,13 @@ def benchmark_chunk_size(
     gds_io_threads: int = 4,
     save_html_reports: bool = False,
     clear_cache: bool = False,
-    device: str = "cuda"
+    device: str = "cuda",
+    num_layers: int = 2,
+    profiling_sleep_seconds: int = 0
 ) -> ProfilingResults:
     """Benchmark a specific chunk_size and num_tokens combination"""
     
-    print(f"\n=== Benchmarking chunk_size={chunk_size}, tokens={num_tokens} ===")
+    print(f"\n=== Benchmarking chunk_size={chunk_size}, tokens={num_tokens}, layers={num_layers} ===")
     
     # Calculate derived values
     num_chunks = (num_tokens + chunk_size - 1) // chunk_size  # Ceiling division
@@ -328,19 +394,18 @@ def benchmark_chunk_size(
         cufile_buffer_size=cufile_buffer_size,
         gds_io_threads=gds_io_threads
     )
-    metadata = setup_lmcache_metadata(chunk_size=chunk_size)
+    metadata = setup_lmcache_metadata(chunk_size=chunk_size, num_layers=num_layers)
     
     # Create GPU connector
     gpu_connector = VLLMPagedMemGPUConnectorV2(
         hidden_dim_size=4096,  # Typical for 7B model
-        num_layers=2  # Reduced from 32 to 2 for smaller files
+        num_layers=num_layers
     )
     
     # Create unique engine instance for this configuration
-    engine_id = f"benchmark_chunk_{chunk_size}_tokens_{num_tokens}"
+    engine_id = f"benchmark_chunk_{chunk_size}_tokens_{num_tokens}_layers_{num_layers}"
     
     profiling_output = None
-    storage_errors = 0
     memory_errors = 0
     error_details = []
     
@@ -352,85 +417,64 @@ def benchmark_chunk_size(
         
         # Generate test data
         tokens = generate_test_tokens(num_tokens)
-        kv_cache = generate_kv_cache_paged_tensors(num_blocks=num_blocks, device=device)
+        kv_cache = generate_kv_cache_paged_tensors(num_blocks=num_blocks, device=device, num_layers=num_layers)
         # Use deterministic slot mapping for consistent results
         torch.manual_seed(42)
         slot_mapping = torch.randperm(num_blocks * 16, device=device)[:num_tokens]
         
-        # Timing collectors
+        # Store data once at the beginning
+        print(f"  Storing data once for cache...")
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        
+        try:
+            # Use enhanced store that waits for completion
+            store_completed = enhanced_store_with_wait(
+                engine, tokens, kv_cache, slot_mapping, timeout_seconds=30
+            )
+            torch.cuda.synchronize()  # Wait for GPU operations to complete
+            
+            if store_completed:
+                print(f"  Store completed successfully (async operations finished)")
+            else:
+                print(f"  Store operation initiated (async operations may still be pending)")
+                # Add additional wait time to be safe
+                time.sleep(2.0)
+                print(f"  Additional wait completed")
+        except Exception as e:
+            error_msg = f"Initial store failed: {str(e)}"
+            print(f"    ERROR: {error_msg}")
+            # Return failed result
+            return ProfilingResults(
+                chunk_size=chunk_size,
+                num_tokens=num_tokens,
+                num_chunks=num_chunks,
+                retrieve_time=float('inf'),
+                throughput_gbps=0,
+                data_size_mb=0,
+                detailed_timings={},
+                profiling_output=None,
+                memory_errors=1,
+                error_details=[error_msg]
+            )
+        
+        # Timing collectors for retrieve operations only
         detailed_timings = {}
-        store_times = []
         retrieve_times = []
         
+        # Benchmark retrieve operations only
         for iteration in range(num_iterations):
-            print(f"  Iteration {iteration + 1}/{num_iterations}")
+            print(f"  Retrieve iteration {iteration + 1}/{num_iterations}")
             
             # Sleep before profiled iteration to allow external script coordination
-            if enable_profiling and iteration == (num_iterations - 1):
-                print(f"    Profiling iteration - sleeping 8 seconds for external script coordination...")
-                time.sleep(8)
+            if enable_profiling and iteration == (num_iterations - 1) and profiling_sleep_seconds > 0:
+                print(f"    Profiling iteration - sleeping {profiling_sleep_seconds} seconds for external script coordination...")
+                time.sleep(profiling_sleep_seconds)
                 print(f"    Starting profiled iteration...")
             
-            # Store operation
+            # Prepare fresh cache tensors for retrieve operation
+            retrieved_cache = generate_kv_cache_paged_tensors(num_blocks=num_blocks, device=device, num_layers=num_layers)
             torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-            
-            # Profile store operation on last iteration (after warmup)
-            store_profiler = None
-            if enable_profiling and iteration == (num_iterations - 1):
-                store_profiler = AdvancedProfiler(profiler_type)
-                store_profiler.start()
-            
-            iteration_store_time = None
-            try:
-                if detailed_timing:
-                    with DetailedTimer("store_total", detailed_timings):
-                        engine.store(
-                            tokens,
-                            kvcaches=kv_cache,
-                            slot_mapping=slot_mapping
-                        )
-                    # Get the time for this specific iteration
-                    if detailed_timings.get("store_total"):
-                        iteration_store_time = detailed_timings["store_total"][-1]
-                else:
-                    start_time = time.perf_counter()
-                    engine.store(
-                        tokens,
-                        kvcaches=kv_cache,
-                        slot_mapping=slot_mapping
-                    )
-                    torch.cuda.synchronize()
-                    iteration_store_time = time.perf_counter() - start_time
-                    store_times.append(iteration_store_time)
-                
-                print(f"    Store time: {iteration_store_time:.4f}s")
-                
-            except Exception as e:
-                storage_errors += 1
-                error_msg = f"Store error in iteration {iteration}: {str(e)}"
-                error_details.append(error_msg)
-                print(f"    ERROR: {error_msg}")
-                # Skip retrieve for this iteration if store failed
-                continue
-            
-            if store_profiler and store_profiler.active:
-                store_output = store_profiler.stop()
-                if store_output:
-                    profile_filename = f"profile_store_chunk_{chunk_size}_tokens_{num_tokens}.txt"
-                    with open(profile_filename, 'w') as f:
-                        f.write(f"Store Operation Profile - Chunk Size: {chunk_size}, Tokens: {num_tokens}\n")
-                        f.write("="*80 + "\n")
-                        f.write(store_output)
-                    print(f"  Store profiling saved to {profile_filename}")
-                    
-                    if save_html_reports:
-                        html_filename = f"profile_store_chunk_{chunk_size}_tokens_{num_tokens}.html"
-                        if store_profiler.save_html_report(html_filename):
-                            print(f"  Store HTML report saved to {html_filename}")
-            
-            # Retrieve operation
-            retrieved_cache = generate_kv_cache_paged_tensors(num_blocks=num_blocks, device=device)
             torch.cuda.synchronize()
             
             # Profile retrieve operation on last iteration (after warmup)
@@ -480,50 +524,30 @@ def benchmark_chunk_size(
             if retrieve_profiler and retrieve_profiler.active:
                 retrieve_output = retrieve_profiler.stop()
                 if retrieve_output:
-                    profile_filename = f"profile_retrieve_chunk_{chunk_size}_tokens_{num_tokens}.txt"
+                    profile_filename = f"profile_retrieve_chunk_{chunk_size}_tokens_{num_tokens}_layers_{num_layers}.txt"
                     with open(profile_filename, 'w') as f:
-                        f.write(f"Retrieve Operation Profile - Chunk Size: {chunk_size}, Tokens: {num_tokens}\n")
+                        f.write(f"Retrieve Operation Profile - Chunk Size: {chunk_size}, Tokens: {num_tokens}, Layers: {num_layers}\n")
                         f.write("="*80 + "\n")
                         f.write(retrieve_output)
                     print(f"  Retrieve profiling saved to {profile_filename}")
                     profiling_output = retrieve_output  # Store for results
                     
                     if save_html_reports:
-                        html_filename = f"profile_retrieve_chunk_{chunk_size}_tokens_{num_tokens}.html"
+                        html_filename = f"profile_retrieve_chunk_{chunk_size}_tokens_{num_tokens}_layers_{num_layers}.html"
                         if retrieve_profiler.save_html_report(html_filename):
                             print(f"  Retrieve HTML report saved to {html_filename}")
         
         # Print timing summary for this configuration
         print(f"  \n  === Timing Summary ===")
         
-        # Collect all successful times for analysis
-        successful_store_times = []
+        # Collect all successful retrieve times for analysis
         successful_retrieve_times = []
         
         if detailed_timing:
-            if "store_total" in detailed_timings:
-                successful_store_times = detailed_timings["store_total"]
             if "retrieve_total" in detailed_timings:
                 successful_retrieve_times = detailed_timings["retrieve_total"]
         else:
-            successful_store_times = store_times
             successful_retrieve_times = retrieve_times
-        
-        # Print individual store times with outlier detection
-        if successful_store_times:
-            store_mean = np.mean(successful_store_times)
-            store_std = np.std(successful_store_times)
-            store_min = np.min(successful_store_times)
-            store_max = np.max(successful_store_times)
-            store_ratio = store_max / store_min if store_min > 0 else float('inf')
-            print(f"  Store times: ", end="")
-            for i, time_val in enumerate(successful_store_times):
-                # Mark outliers (more than 1.5 std deviations from mean)
-                if abs(time_val - store_mean) > 1.5 * store_std and len(successful_store_times) > 2:
-                    print(f"{time_val:.4f}s* ", end="")  # * indicates outlier
-                else:
-                    print(f"{time_val:.4f}s ", end="")
-            print(f"(avg: {store_mean:.4f}s, std: {store_std:.4f}s, max/min: {store_ratio:.2f}x)")
         
         # Print individual retrieve times with outlier detection
         if successful_retrieve_times:
@@ -541,17 +565,10 @@ def benchmark_chunk_size(
                     print(f"{time_val:.4f}s ", end="")
             print(f"(avg: {retrieve_mean:.4f}s, std: {retrieve_std:.4f}s, max/min: {retrieve_ratio:.2f}x)")
         
-        if successful_store_times or successful_retrieve_times:
+        if successful_retrieve_times:
             print(f"  (* indicates outlier > 1.5 std dev from mean)")
         
-        # Calculate results - handle case where no successful operations occurred
-        if detailed_timing and "store_total" in detailed_timings:
-            avg_store_time = np.mean(detailed_timings["store_total"])
-        elif store_times:
-            avg_store_time = np.mean(store_times)
-        else:
-            avg_store_time = float('inf')  # All store operations failed
-            
+        # Calculate results - handle case where no successful operations occurred          
         if detailed_timing and "retrieve_total" in detailed_timings:
             avg_retrieve_time = np.mean(detailed_timings["retrieve_total"])
         elif retrieve_times:
@@ -560,8 +577,8 @@ def benchmark_chunk_size(
             avg_retrieve_time = float('inf')  # All retrieve operations failed
         
         # Calculate data size and throughput
-        # Each token: 2 layers * 2 (K,V) * 32 heads * 128 head_size * 2 bytes (bfloat16)
-        data_size_bytes = num_tokens * 2 * 2 * 32 * 128 * 2
+        # Each token: num_layers * 2 (K,V) * 32 heads * 128 head_size * 2 bytes (bfloat16)
+        data_size_bytes = num_tokens * num_layers * 2 * 32 * 128 * 2
         data_size_mb = data_size_bytes / (1024 * 1024)
         throughput_gbps = (data_size_mb / avg_retrieve_time / 1024) if avg_retrieve_time > 0 and avg_retrieve_time != float('inf') else 0
         
@@ -580,24 +597,22 @@ def benchmark_chunk_size(
             chunk_size=chunk_size,
             num_tokens=num_tokens,
             num_chunks=num_chunks,
-            store_time=avg_store_time,
             retrieve_time=avg_retrieve_time,
             throughput_gbps=throughput_gbps,
             data_size_mb=data_size_mb,
             detailed_timings=aggregated_timings,
             profiling_output=profiling_output,
-            storage_errors=storage_errors,
             memory_errors=memory_errors,
             error_details=error_details
         )
         
         # Print results with error information
-        if storage_errors > 0 or memory_errors > 0:
-            print(f"  ERRORS: Storage={storage_errors}, Memory={memory_errors}")
+        if memory_errors > 0:
+            print(f"  ERRORS: Memory={memory_errors}")
             for error in error_details:
                 print(f"    - {error}")
         
-        print(f"  Results: Store={avg_store_time:.4f}s, Retrieve={avg_retrieve_time:.4f}s, "
+        print(f"  Results: Retrieve={avg_retrieve_time:.4f}s, "
               f"Throughput={throughput_gbps:.2f} GB/s")
         
         return results
@@ -623,7 +638,9 @@ def run_comprehensive_benchmark(
     gds_io_threads: int = 4,
     save_html_reports: bool = False,
     clear_cache: bool = False,
-    device: str = "cuda"
+    device: str = "cuda",
+    num_layers: int = 2,
+    profiling_sleep_seconds: int = 0
 ) -> List[ProfilingResults]:
     """Run comprehensive benchmark across multiple configurations"""
     
@@ -652,7 +669,9 @@ def run_comprehensive_benchmark(
                     gds_io_threads=gds_io_threads,
                     save_html_reports=save_html_reports,
                     clear_cache=clear_cache and chunk_size == chunk_sizes[0] and num_tokens == token_counts[0],  # Only clear once
-                    device=device
+                    device=device,
+                    num_layers=num_layers,
+                    profiling_sleep_seconds=profiling_sleep_seconds
                 )
                 all_results.append(results)
                 
@@ -673,13 +692,11 @@ def run_comprehensive_benchmark(
                 'chunk_size': result.chunk_size,
                 'num_tokens': result.num_tokens,
                 'num_chunks': result.num_chunks,
-                'store_time': result.store_time if result.store_time != float('inf') else None,
                 'retrieve_time': result.retrieve_time if result.retrieve_time != float('inf') else None,
                 'throughput_gbps': result.throughput_gbps,
                 'data_size_mb': result.data_size_mb,
                 'detailed_timings': result.detailed_timings,
                 'has_profiling_data': result.profiling_output is not None,
-                'storage_errors': result.storage_errors,
                 'memory_errors': result.memory_errors,
                 'error_details': result.error_details
             }
@@ -693,16 +710,15 @@ def run_comprehensive_benchmark(
     print(f"\n{'='*80}")
     print("ADVANCED BENCHMARK SUMMARY")
     print(f"{'='*80}")
-    print(f"{'Chunk Size':<12} {'Tokens':<8} {'Chunks':<8} {'Store(s)':<10} {'Retrieve(s)':<12} {'Throughput(GB/s)':<15} {'Errors':<10}")
-    print(f"{'-'*90}")
+    print(f"{'Chunk Size':<12} {'Tokens':<8} {'Chunks':<8} {'Retrieve(s)':<12} {'Throughput(GB/s)':<15} {'Errors':<10}")
+    print(f"{'-'*75}")
     
     for result in all_results:
-        store_str = f"{result.store_time:.4f}" if result.store_time != float('inf') else "FAILED"
         retrieve_str = f"{result.retrieve_time:.4f}" if result.retrieve_time != float('inf') else "FAILED"
-        error_str = f"S:{result.storage_errors}/M:{result.memory_errors}" if (result.storage_errors > 0 or result.memory_errors > 0) else "-"
+        error_str = f"M:{result.memory_errors}" if result.memory_errors > 0 else "-"
         
         print(f"{result.chunk_size:<12} {result.num_tokens:<8} {result.num_chunks:<8} "
-              f"{store_str:<10} {retrieve_str:<12} {result.throughput_gbps:<15.2f} {error_str:<10}")
+              f"{retrieve_str:<12} {result.throughput_gbps:<15.2f} {error_str:<10}")
     
     return all_results
 
@@ -807,6 +823,20 @@ def main():
         help="GPU device ID to use (default: 0)"
     )
     
+    parser.add_argument(
+        "--num-layers",
+        type=int,
+        default=2,
+        help="Number of transformer layers to simulate (default: 2 for ~8MB files, use 32 for ~128MB files)"
+    )
+    
+    parser.add_argument(
+        "--profiling-sleep-seconds",
+        type=int,
+        default=0,
+        help="Seconds to sleep before profiled iteration for external script coordination (default: 0, no sleep)"
+    )
+    
     args = parser.parse_args()
     
     # Validate profiler availability
@@ -835,6 +865,11 @@ def main():
     torch.cuda.set_device(args.gpu_device)
     print(f"Using GPU {args.gpu_device}: {torch.cuda.get_device_name(args.gpu_device)}")
     print(f"GPU Memory: {torch.cuda.get_device_properties(args.gpu_device).total_memory / 1024**3:.1f} GB")
+    
+    # Calculate and display data size information
+    bytes_per_token = args.num_layers * 2 * 32 * 128 * 2  # layers * (K,V) * heads * head_size * bytes_per_bfloat16
+    kb_per_token = bytes_per_token / 1024
+    print(f"Model configuration: {args.num_layers} layers, {kb_per_token:.1f} KB per token")
     
     # Determine backend configuration
     use_weka = not args.use_local_cpu  # Use Weka unless explicitly told to use local CPU
@@ -868,26 +903,24 @@ def main():
         gds_io_threads=args.gds_io_threads,
         save_html_reports=args.save_html_reports,
         clear_cache=args.clear_cache,
-        device=f"cuda:{args.gpu_device}"
+        device=f"cuda:{args.gpu_device}",
+        num_layers=args.num_layers,
+        profiling_sleep_seconds=args.profiling_sleep_seconds
     )
     
     # Print diagnostic information
-    total_storage_errors = sum(r.storage_errors for r in results)
     total_memory_errors = sum(r.memory_errors for r in results)
     
     print(f"\nAdvanced benchmark complete! Tested {len(results)} configurations.")
-    if total_storage_errors > 0 or total_memory_errors > 0:
-        print(f"Total errors: Storage={total_storage_errors}, Memory={total_memory_errors}")
+    if total_memory_errors > 0:
+        print(f"Total errors: Memory={total_memory_errors}")
         print("\nSUGGESTED FIXES:")
-        if total_storage_errors > 0:
-            print("- Storage errors indicate Weka GDS backend issues. Try:")
-            print("  * Clearing the cache directory with --clear-cache")
-            print("  * Reducing the cufile-buffer-size (try 8192 or 4096)")
-            print("  * Reducing the number of gds-io-threads (try 2 or 1)")
-            print("  * Using --use-local-cpu instead of Weka backend")
-        if total_memory_errors > 0:
-            print("- Memory errors (NoneType tensor) are usually caused by storage failures")
-            print("  * Check the error details above for specific failure causes")
+        print("- Memory errors (NoneType tensor) are usually caused by storage failures")
+        print("  * Check the error details above for specific failure causes")
+        print("  * Try clearing the cache directory with --clear-cache")
+        print("  * Try reducing the cufile-buffer-size (try 8192 or 4096)")
+        print("  * Try reducing the number of gds-io-threads (try 2 or 1)")
+        print("  * Try using --use-local-cpu instead of Weka backend")
     
     if args.enable_profiling:
         print("Check the generated profile_*.txt files for detailed CPU time analysis.")
