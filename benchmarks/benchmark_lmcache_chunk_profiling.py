@@ -71,9 +71,15 @@ try:
     from lmcache.v1.cache_engine import LMCacheEngineMetadata
     from lmcache.v1.gpu_connector import VLLMPagedMemGPUConnectorV2
     LMCACHE_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    print(f"Failed to import from lmcache.v1: {e}")
     LMCACHE_AVAILABLE = False
     print("WARNING: lmcache not available. Are you running this from the AMG conda environment?")
+    # Define placeholder types to avoid NameError in function signatures
+    LMCacheEngineConfig = None
+    LMCacheEngineMetadata = None
+    LMCacheEngineBuilder = None
+    VLLMPagedMemGPUConnectorV2 = None
 
 
 @dataclass
@@ -214,7 +220,7 @@ def generate_kv_cache_paged_tensors(
             dtype=dtype, device=device
         )
         kv_cache.append(layer_tensor)
-    
+
     return kv_cache
 
 
@@ -226,8 +232,11 @@ def setup_lmcache_config(
     gds_io_threads: int = 4,  # Number of I/O threads
     local_cpu: bool = False,
     max_local_cpu_size: float = 5.0
-) -> LMCacheEngineConfig:
+):
     """Setup LMCache configuration"""
+    if not LMCACHE_AVAILABLE:
+        raise RuntimeError("LMCache is not available")
+
     if use_weka:
         return LMCacheEngineConfig.from_defaults(
             chunk_size=chunk_size,
@@ -267,8 +276,11 @@ def setup_lmcache_metadata(
     num_heads: int = 32,
     head_size: int = 128,
     chunk_size: int = 256
-) -> LMCacheEngineMetadata:
+):
     """Setup LMCache metadata"""
+    if not LMCACHE_AVAILABLE:
+        raise RuntimeError("LMCache is not available")
+
     # Include num_layers in model_name to ensure different layer configurations 
     # use different cache keys and don't share cache files
     # Note: Can't use '_' as storage backend has assertion against it
