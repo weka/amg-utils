@@ -53,11 +53,11 @@ func init() {
 
 // Configuration constants
 const (
-	uvEnvName   = "amg_stable"
-	repoURL     = "git@github.com:weka/weka-LMCache.git"
-	repoName    = "LMCache"
-	commitHash  = "c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d"
-	vllmCommit  = "b6553be1bc75f046b00046a4ad7576364d03c835"
+	uvEnvName  = "amg_stable"
+	repoURL    = "git@github.com:weka/weka-LMCache.git"
+	repoName   = "LMCache"
+	commitHash = "c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d"
+	vllmCommit = "b6553be1bc75f046b00046a4ad7576364d03c835"
 )
 
 func getBasePath() string {
@@ -84,7 +84,7 @@ func commandExists(cmd string) bool {
 
 func runHostSetup() error {
 	fmt.Println("🚀 Starting AMG environment setup...")
-	
+
 	// Handle cross-platform differences
 	switch runtime.GOOS {
 	case "linux":
@@ -100,29 +100,29 @@ func runHostSetup() error {
 
 func runLinuxSetup() error {
 	fmt.Println("🐧 Running Linux setup...")
-	
+
 	// Initial checks
 	fmt.Println("--- Initial Setup Checks ---")
 	if !commandExists("uv") {
 		return fmt.Errorf("uv command not found. Please install uv: https://docs.astral.sh/uv/getting-started/installation/")
 	}
-	
+
 	if !commandExists("git") {
 		return fmt.Errorf("git command not found. Please install Git")
 	}
-	
+
 	fmt.Println("✅ uv and Git commands found. Proceeding with setup.")
-	
+
 	// Check and create uv virtual environment
 	if err := setupUvEnvironment(); err != nil {
 		return fmt.Errorf("failed to setup uv environment: %w", err)
 	}
-	
+
 	// Setup repository
 	if err := setupRepository(); err != nil {
 		return fmt.Errorf("failed to setup repository: %w", err)
 	}
-	
+
 	fmt.Println("🎉 Setup completed successfully!")
 	return nil
 }
@@ -147,34 +147,34 @@ func runWindowsSetup() error {
 
 func setupUvEnvironment() error {
 	fmt.Println("\n--- UV Virtual Environment Setup ---")
-	
+
 	basePath := getBasePath()
 	uvEnvPath := getUvEnvPath()
-	
+
 	// Create base directory if it doesn't exist
 	if err := os.MkdirAll(basePath, 0755); err != nil {
 		return fmt.Errorf("failed to create base path '%s': %w", basePath, err)
 	}
-	
+
 	fmt.Printf("Checking for UV virtual environment: '%s'...\n", uvEnvPath)
-	
+
 	// Check if uv virtual environment exists
 	if _, err := os.Stat(uvEnvPath); os.IsNotExist(err) {
 		fmt.Printf("UV virtual environment '%s' not found.\n", uvEnvPath)
 		fmt.Printf("Creating UV virtual environment '%s' with Python 3.12...\n", uvEnvName)
-		
+
 		// Navigate to the base path and create the virtual environment
 		cmd := exec.Command("uv", "venv", "--python", "3.12", ".venv")
 		cmd.Dir = basePath
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		
+
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to create uv virtual environment '%s': %w", uvEnvName, err)
 		}
-		
+
 		fmt.Printf("✅ UV virtual environment '%s' created successfully.\n", uvEnvName)
-		
+
 		// Install packages for new environment
 		if err := installUvPackages(); err != nil {
 			return fmt.Errorf("failed to install uv packages: %w", err)
@@ -182,13 +182,13 @@ func setupUvEnvironment() error {
 	} else {
 		fmt.Printf("✅ UV virtual environment '%s' already exists.\n", uvEnvName)
 	}
-	
+
 	return nil
 }
 
 func installUvPackages() error {
 	fmt.Println("Installing initial Python packages...")
-	
+
 	basePath := getBasePath()
 	packages := []string{
 		fmt.Sprintf("https://wheels.vllm.ai/%s/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl", vllmCommit),
@@ -197,116 +197,116 @@ func installUvPackages() error {
 		"pyinstrument",
 		"line_profiler",
 	}
-	
+
 	for _, pkg := range packages {
 		fmt.Printf("Installing %s...\n", pkg)
 		cmd := exec.Command("uv", "pip", "install", "--no-cache-dir", pkg)
 		cmd.Dir = basePath
-		
+
 		if err := cmd.Run(); err != nil {
 			fmt.Printf("⚠️ Warning: Failed to install %s\n", pkg)
 		} else {
 			fmt.Printf("✅ Installed %s successfully\n", pkg)
 		}
 	}
-	
+
 	return nil
 }
 
 func setupRepository() error {
 	fmt.Println("\n--- GitHub Repository Setup ---")
-	
+
 	basePath := getBasePath()
 	repoPath := getRepoPath()
-	
+
 	// Create base directory
 	if err := os.MkdirAll(basePath, 0755); err != nil {
 		return fmt.Errorf("failed to create base path '%s': %w", basePath, err)
 	}
-	
+
 	// Check if repository exists
 	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
 		fmt.Printf("Repository directory '%s' not found.\n", repoPath)
 		fmt.Printf("Cloning repository '%s' into '%s'...\n", repoURL, repoPath)
-		
+
 		cmd := exec.Command("git", "clone", repoURL, repoPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		
+
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to clone repository: %w", err)
 		}
-		
+
 		fmt.Println("✅ Repository cloned successfully.")
 	} else {
 		fmt.Printf("Repository directory '%s' found.\n", repoPath)
 		fmt.Println("Pulling latest changes...")
-		
+
 		cmd := exec.Command("git", "-C", repoPath, "pull")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		
+
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to pull repository changes: %w", err)
 		}
-		
+
 		fmt.Println("✅ Repository updated.")
 	}
-	
+
 	// Checkout specific commit
 	if err := checkoutCommit(repoPath); err != nil {
 		return fmt.Errorf("failed to checkout commit: %w", err)
 	}
-	
+
 	// Install repository dependencies
 	if err := installRepositoryDependencies(repoPath); err != nil {
 		return fmt.Errorf("failed to install repository dependencies: %w", err)
 	}
-	
+
 	return nil
 }
 
 func checkoutCommit(repoPath string) error {
 	fmt.Println("\n--- Git Commit Checkout ---")
-	
+
 	// Get current commit
 	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to get current commit: %w", err)
 	}
-	
+
 	currentCommit := strings.TrimSpace(string(output))
-	
+
 	if currentCommit != commitHash {
 		fmt.Printf("Current commit (%s) does not match target commit (%s).\n", currentCommit, commitHash)
 		fmt.Printf("Checking out commit: %s...\n", commitHash)
-		
+
 		cmd := exec.Command("git", "-C", repoPath, "checkout", commitHash)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		
+
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to checkout commit '%s': %w", commitHash, err)
 		}
-		
+
 		fmt.Printf("✅ Successfully checked out commit: %s\n", commitHash)
 	} else {
 		fmt.Printf("✅ Repository is already at the target commit: %s\n", commitHash)
 	}
-	
+
 	return nil
 }
 
 func installRepositoryDependencies(repoPath string) error {
 	fmt.Println("\n--- Installing Repository Dependencies ---")
-	
+
 	reqFiles := []string{
 		filepath.Join(repoPath, "requirements", "build.txt"),
 		filepath.Join(repoPath, "requirements", "common.txt"),
 		filepath.Join(repoPath, "requirements", "cuda.txt"),
 	}
-	
+
 	// Check if requirement files exist
 	allExist := true
 	for _, reqFile := range reqFiles {
@@ -315,19 +315,19 @@ func installRepositoryDependencies(repoPath string) error {
 			break
 		}
 	}
-	
+
 	if allExist {
 		fmt.Println("Installing dependencies from requirements files...")
 		args := []string{"pip", "install", "--no-cache-dir"}
 		for _, reqFile := range reqFiles {
 			args = append(args, "-r", reqFile)
 		}
-		
+
 		cmd := exec.Command("uv", args...)
 		cmd.Dir = repoPath
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		
+
 		if err := cmd.Run(); err != nil {
 			fmt.Println("⚠️ Warning: Failed to install repository dependencies")
 		} else {
@@ -336,31 +336,31 @@ func installRepositoryDependencies(repoPath string) error {
 	} else {
 		fmt.Println("⚠️ One or more requirement files not found. Skipping dependency installation.")
 	}
-	
+
 	// Install in editable mode
 	fmt.Println("Installing repository in editable mode...")
 	cmd := exec.Command("uv", "pip", "install", "-e", ".")
 	cmd.Dir = repoPath
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	if err := cmd.Run(); err != nil {
 		fmt.Println("⚠️ Warning: Failed to install repository in editable mode")
 	} else {
 		fmt.Println("✅ Repository installed in editable mode successfully")
 	}
-	
+
 	// Hot-patch transformers
 	fmt.Println("Hot-patching transformers package...")
 	cmd = exec.Command("uv", "pip", "install", "--no-cache-dir", "transformers<4.54.0")
 	cmd.Dir = repoPath
-	
+
 	if err := cmd.Run(); err != nil {
 		fmt.Println("⚠️ Warning: Failed to hot-patch transformers package")
 	} else {
 		fmt.Println("✅ Downgraded transformers explicitly")
 	}
-	
+
 	return nil
 }
 
@@ -377,7 +377,7 @@ func runHostStatus() error {
 
 func runHostClear() error {
 	fmt.Println("🧹 Clearing AMG environment...")
-	
+
 	// Handle cross-platform differences
 	switch runtime.GOOS {
 	case "linux":
@@ -393,7 +393,7 @@ func runHostClear() error {
 
 func runLinuxClear() error {
 	fmt.Println("🐧 Running Linux cleanup...")
-	
+
 	// Remove UV virtual environment (by removing the base directory which contains .venv)
 	basePath := getBasePath()
 	if _, err := os.Stat(basePath); err == nil {
@@ -406,7 +406,7 @@ func runLinuxClear() error {
 	} else {
 		fmt.Printf("Directory '%s' does not exist\n", basePath)
 	}
-	
+
 	fmt.Println("🎉 Cleanup completed!")
 	return nil
 }

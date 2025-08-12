@@ -54,6 +54,8 @@ go get github.com/spf13/cobra@latest
 4. Build the binary:
 ```bash
 go build -o amgctl .
+# Or using Make
+make build
 ```
 
 ### Cross-Platform Builds
@@ -61,6 +63,10 @@ go build -o amgctl .
 Build for different platforms:
 
 ```bash
+# Using Make (recommended)
+make build-all
+
+# Or manually with Go
 # Linux
 GOOS=linux GOARCH=amd64 go build -o amgctl-linux-amd64 .
 
@@ -180,14 +186,51 @@ The tool provides comprehensive error handling:
 3. Add the command to the root command in `main.go`
 4. Implement platform-specific logic as needed
 
+### Make Commands
+
+The project includes a comprehensive Makefile with linting, formatting, and build targets:
+
+```bash
+# Build the binary
+make build
+
+# Run all linting and formatting checks (recommended for development)
+make lint-all
+
+# Fix formatting and auto-fixable linting issues
+make fix
+
+# Install golangci-lint if not present
+make lint-install
+
+# Individual linting commands
+make fmt-check    # Check formatting (read-only)
+make vet          # Run go vet
+make lint         # Run golangci-lint
+
+# Build for all platforms
+make build-all
+
+# Clean build artifacts
+make clean
+
+# Show all available targets
+make help
+```
+
 ### Testing
 
 ```bash
 # Run tests (when available)
 go test ./...
+# Or using Make
+make test
 
 # Build and test manually
 go build -o amgctl .
+./amgctl --help
+# Or using Make
+make build
 ./amgctl --help
 ```
 
@@ -196,8 +239,10 @@ go build -o amgctl .
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test on your platform
-5. Submit a pull request
+4. Run linting and formatting checks: `make lint-all`
+5. Fix any issues: `make fix`
+6. Test on your platform
+7. Submit a pull request
 
 ## License
 
