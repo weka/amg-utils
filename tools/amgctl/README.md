@@ -17,20 +17,20 @@ Current version: **0.1.0**
 
 ### Linux (Fully Implemented)
 - Go 1.19 or later
-- Conda (Anaconda or Miniconda)
+- UV (https://docs.astral.sh/uv/getting-started/installation/)
 - Git
 - SSH keys configured for GitHub access
 
 ### macOS (Placeholder Implementation)
 - Go 1.19 or later
 - Homebrew (recommended)
-- Conda (Anaconda or Miniconda)
+- UV (https://docs.astral.sh/uv/getting-started/installation/)
 - Git
 
 ### Windows (Placeholder Implementation)
 - Go 1.19 or later
 - Git for Windows
-- Conda (Anaconda or Miniconda)
+- UV (https://docs.astral.sh/uv/getting-started/installation/)
 
 ## Installation
 
@@ -87,20 +87,20 @@ GOOS=windows GOARCH=amd64 go build -o amgctl-windows-amd64.exe .
 ### Host Environment Management
 
 #### Setup AMG Environment
-Set up the complete AMG environment including conda environment, repository cloning, and dependency installation:
+Set up the complete AMG environment including UV virtual environment, repository cloning, and dependency installation:
 
 ```bash
 ./amgctl host setup
 ```
 
 This command performs the following actions:
-1. **Initial Checks**: Verifies that conda and git are installed
-2. **Conda Environment**: Creates `amg_stable` environment with Python 3.12
+1. **Initial Checks**: Verifies that uv and git are installed
+2. **UV Virtual Environment**: Creates `amg_stable` virtual environment with Python 3.12
 3. **Package Installation**: Installs required Python packages including:
    - vLLM wheel from specific commit
    - py-spy, scalene, pyinstrument, line_profiler
 4. **Repository Management**: 
-   - Clones `weka-LMCache` repository to `~/amg-stable/LMCache`
+   - Clones `weka-LMCache` repository to `~/amg_stable/LMCache`
    - Checks out specific commit: `c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d`
 5. **Dependencies**: Installs repository dependencies from requirements files
 6. **Editable Install**: Installs the repository in editable mode
@@ -121,8 +121,8 @@ Remove all components created by the setup command:
 ```
 
 This command:
-- Removes the `amg_stable` conda environment
-- Deletes the `~/amg-stable` directory and all contents
+- Removes the `amg_stable` UV virtual environment
+- Deletes the `~/amg_stable` directory and all contents
 
 ### Docker Management (Placeholder)
 
@@ -137,11 +137,11 @@ Retrieve information about Docker containers and images (placeholder):
 
 The tool uses the following default configuration values:
 
-- **Conda Environment Name**: `amg_stable`
+- **UV Virtual Environment Name**: `amg_stable`
 - **Repository URL**: `git@github.com:weka/weka-LMCache.git`
 - **Repository Name**: `LMCache`
 - **Target Commit**: `c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d`
-- **Base Path**: `~/amg-stable`
+- **Base Path**: `~/amg_stable`
 - **vLLM Commit**: `b6553be1bc75f046b00046a4ad7576364d03c835`
 
 These values are currently hardcoded but may be made configurable in future versions.
@@ -151,7 +151,7 @@ These values are currently hardcoded but may be made configurable in future vers
 ### Linux (Fully Functional)
 - All features are implemented and tested
 - Requires standard Linux development tools
-- Uses system conda installation
+- Uses system UV installation
 
 ### macOS (Placeholder)
 - Basic structure implemented
@@ -209,10 +209,3 @@ For issues and questions:
 1. Check existing issues in the repository
 2. Create a new issue with detailed information
 3. Include platform information and error logs
-
-## Roadmap
-
-- **v0.2.0**: Complete macOS and Windows implementations
-- **v0.3.0**: Docker command implementations
-- **v0.4.0**: Configuration file support
-- **v0.5.0**: Enhanced status reporting and monitoring

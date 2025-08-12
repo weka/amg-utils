@@ -20,7 +20,7 @@ var hostCmd = &cobra.Command{
 var hostSetupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Set up the AMG environment",
-	Long: `Set up the AMG environment by creating conda environments, cloning repositories,
+	Long: `Set up the AMG environment by creating UV virtual environments, cloning repositories,
 and installing dependencies. This replicates the functionality of setup_lmcache_stable.sh.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runHostSetup()
@@ -30,7 +30,7 @@ and installing dependencies. This replicates the functionality of setup_lmcache_
 var hostStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show AMG environment status",
-	Long:  `Display the current status of the AMG environment including conda environments and repositories.`,
+	Long:  `Display the current status of the AMG environment including UV virtual environments and repositories.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runHostStatus()
 	},
@@ -39,7 +39,7 @@ var hostStatusCmd = &cobra.Command{
 var hostClearCmd = &cobra.Command{
 	Use:   "clear",
 	Short: "Clear the AMG environment",
-	Long:  `Remove conda environments, repositories, and other artifacts created by 'amgctl host setup'.`,
+	Long:  `Remove UV virtual environments, repositories, and other artifacts created by 'amgctl host setup'.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runHostClear()
 	},
@@ -53,11 +53,11 @@ func init() {
 
 // Configuration constants
 const (
-	condaEnvName = "amg_stable"
-	repoURL      = "git@github.com:weka/weka-LMCache.git"
-	repoName     = "LMCache"
-	commitHash   = "c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d"
-	vllmCommit   = "b6553be1bc75f046b00046a4ad7576364d03c835"
+	uvEnvName   = "amg_stable"
+	repoURL     = "git@github.com:weka/weka-LMCache.git"
+	repoName    = "LMCache"
+	commitHash  = "c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d"
+	vllmCommit  = "b6553be1bc75f046b00046a4ad7576364d03c835"
 )
 
 func getBasePath() string {
@@ -66,6 +66,10 @@ func getBasePath() string {
 		return ""
 	}
 	return filepath.Join(home, "amg_stable")
+}
+
+func getUvEnvPath() string {
+	return filepath.Join(getBasePath(), ".venv")
 }
 
 func getRepoPath() string {
@@ -99,19 +103,19 @@ func runLinuxSetup() error {
 	
 	// Initial checks
 	fmt.Println("--- Initial Setup Checks ---")
-	if !commandExists("conda") {
-		return fmt.Errorf("conda command not found. Please install Anaconda or Miniconda")
+	if !commandExists("uv") {
+		return fmt.Errorf("uv command not found. Please install uv: https://docs.astral.sh/uv/getting-started/installation/")
 	}
 	
 	if !commandExists("git") {
 		return fmt.Errorf("git command not found. Please install Git")
 	}
 	
-	fmt.Println("✅ Conda and Git commands found. Proceeding with setup.")
+	fmt.Println("✅ uv and Git commands found. Proceeding with setup.")
 	
-	// Check and create conda environment
-	if err := setupCondaEnvironment(); err != nil {
-		return fmt.Errorf("failed to setup conda environment: %w", err)
+	// Check and create uv virtual environment
+	if err := setupUvEnvironment(); err != nil {
+		return fmt.Errorf("failed to setup uv environment: %w", err)
 	}
 	
 	// Setup repository
@@ -127,7 +131,7 @@ func runMacSetup() error {
 	fmt.Println("🍎 Mac setup not yet implemented. This is a placeholder.")
 	fmt.Println("The Mac implementation will include:")
 	fmt.Println("  - Homebrew dependency checks")
-	fmt.Println("  - macOS-specific conda setup")
+	fmt.Println("  - macOS-specific UV setup")
 	fmt.Println("  - Platform-specific optimizations")
 	return nil
 }
@@ -137,51 +141,55 @@ func runWindowsSetup() error {
 	fmt.Println("The Windows implementation will include:")
 	fmt.Println("  - PowerShell/cmd compatibility")
 	fmt.Println("  - Windows-specific path handling")
-	fmt.Println("  - Alternative package managers")
+	fmt.Println("  - UV package manager integration")
 	return nil
 }
 
-func setupCondaEnvironment() error {
-	fmt.Println("\n--- Conda Environment Setup ---")
-	fmt.Printf("Checking for Conda environment: '%s'...\n", condaEnvName)
+func setupUvEnvironment() error {
+	fmt.Println("\n--- UV Virtual Environment Setup ---")
 	
-	// Check if conda environment exists
-	cmd := exec.Command("conda", "env", "list")
-	output, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to list conda environments: %w", err)
+	basePath := getBasePath()
+	uvEnvPath := getUvEnvPath()
+	
+	// Create base directory if it doesn't exist
+	if err := os.MkdirAll(basePath, 0755); err != nil {
+		return fmt.Errorf("failed to create base path '%s': %w", basePath, err)
 	}
 	
-	envExists := strings.Contains(string(output), condaEnvName)
+	fmt.Printf("Checking for UV virtual environment: '%s'...\n", uvEnvPath)
 	
-	if !envExists {
-		fmt.Printf("Conda environment '%s' not found.\n", condaEnvName)
-		fmt.Printf("Creating Conda environment '%s' with Python 3.12...\n", condaEnvName)
+	// Check if uv virtual environment exists
+	if _, err := os.Stat(uvEnvPath); os.IsNotExist(err) {
+		fmt.Printf("UV virtual environment '%s' not found.\n", uvEnvPath)
+		fmt.Printf("Creating UV virtual environment '%s' with Python 3.12...\n", uvEnvName)
 		
-		cmd := exec.Command("conda", "create", "-n", condaEnvName, "python=3.12", "-y")
+		// Navigate to the base path and create the virtual environment
+		cmd := exec.Command("uv", "venv", "--python", "3.12", ".venv")
+		cmd.Dir = basePath
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to create conda environment '%s': %w", condaEnvName, err)
+			return fmt.Errorf("failed to create uv virtual environment '%s': %w", uvEnvName, err)
 		}
 		
-		fmt.Printf("✅ Conda environment '%s' created successfully.\n", condaEnvName)
+		fmt.Printf("✅ UV virtual environment '%s' created successfully.\n", uvEnvName)
 		
 		// Install packages for new environment
-		if err := installCondaPackages(); err != nil {
-			return fmt.Errorf("failed to install conda packages: %w", err)
+		if err := installUvPackages(); err != nil {
+			return fmt.Errorf("failed to install uv packages: %w", err)
 		}
 	} else {
-		fmt.Printf("✅ Conda environment '%s' already exists.\n", condaEnvName)
+		fmt.Printf("✅ UV virtual environment '%s' already exists.\n", uvEnvName)
 	}
 	
 	return nil
 }
 
-func installCondaPackages() error {
+func installUvPackages() error {
 	fmt.Println("Installing initial Python packages...")
 	
+	basePath := getBasePath()
 	packages := []string{
 		fmt.Sprintf("https://wheels.vllm.ai/%s/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl", vllmCommit),
 		"py-spy",
@@ -192,7 +200,8 @@ func installCondaPackages() error {
 	
 	for _, pkg := range packages {
 		fmt.Printf("Installing %s...\n", pkg)
-		cmd := exec.Command("conda", "run", "-n", condaEnvName, "pip", "install", "--no-cache-dir", pkg)
+		cmd := exec.Command("uv", "pip", "install", "--no-cache-dir", pkg)
+		cmd.Dir = basePath
 		
 		if err := cmd.Run(); err != nil {
 			fmt.Printf("⚠️ Warning: Failed to install %s\n", pkg)
@@ -309,12 +318,12 @@ func installRepositoryDependencies(repoPath string) error {
 	
 	if allExist {
 		fmt.Println("Installing dependencies from requirements files...")
-		args := []string{"run", "-n", condaEnvName, "python3", "-m", "pip", "install", "--no-cache-dir"}
+		args := []string{"pip", "install", "--no-cache-dir"}
 		for _, reqFile := range reqFiles {
 			args = append(args, "-r", reqFile)
 		}
 		
-		cmd := exec.Command("conda", args...)
+		cmd := exec.Command("uv", args...)
 		cmd.Dir = repoPath
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -330,7 +339,7 @@ func installRepositoryDependencies(repoPath string) error {
 	
 	// Install in editable mode
 	fmt.Println("Installing repository in editable mode...")
-	cmd := exec.Command("conda", "run", "-n", condaEnvName, "pip", "install", "-e", ".")
+	cmd := exec.Command("uv", "pip", "install", "-e", ".")
 	cmd.Dir = repoPath
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -343,7 +352,7 @@ func installRepositoryDependencies(repoPath string) error {
 	
 	// Hot-patch transformers
 	fmt.Println("Hot-patching transformers package...")
-	cmd = exec.Command("conda", "run", "-n", condaEnvName, "pip", "install", "--no-cache-dir", "transformers<4.54.0")
+	cmd = exec.Command("uv", "pip", "install", "--no-cache-dir", "transformers<4.54.0")
 	cmd.Dir = repoPath
 	
 	if err := cmd.Run(); err != nil {
@@ -359,7 +368,7 @@ func runHostStatus() error {
 	fmt.Println("📊 AMG Environment Status")
 	fmt.Println("This is a placeholder for host status functionality.")
 	fmt.Println("Will show:")
-	fmt.Println("  - Conda environment status")
+	fmt.Println("  - UV virtual environment status")
 	fmt.Println("  - Repository status and commit")
 	fmt.Println("  - Installed packages")
 	fmt.Println("  - System resources")
@@ -385,28 +394,14 @@ func runHostClear() error {
 func runLinuxClear() error {
 	fmt.Println("🐧 Running Linux cleanup...")
 	
-	// Remove conda environment
-	fmt.Printf("Removing conda environment '%s'...\n", condaEnvName)
-	if commandExists("conda") {
-		cmd := exec.Command("conda", "env", "remove", "-n", condaEnvName, "-y")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("⚠️ Warning: Failed to remove conda environment '%s': %v\n", condaEnvName, err)
-		} else {
-			fmt.Printf("✅ Conda environment '%s' removed successfully\n", condaEnvName)
-		}
-	}
-	
-	// Remove repository directory
+	// Remove UV virtual environment (by removing the base directory which contains .venv)
 	basePath := getBasePath()
 	if _, err := os.Stat(basePath); err == nil {
-		fmt.Printf("Removing directory '%s'...\n", basePath)
+		fmt.Printf("Removing UV environment and directory '%s'...\n", basePath)
 		if err := os.RemoveAll(basePath); err != nil {
 			fmt.Printf("⚠️ Warning: Failed to remove directory '%s': %v\n", basePath, err)
 		} else {
-			fmt.Printf("✅ Directory '%s' removed successfully\n", basePath)
+			fmt.Printf("✅ Directory '%s' (including UV virtual environment) removed successfully\n", basePath)
 		}
 	} else {
 		fmt.Printf("Directory '%s' does not exist\n", basePath)
@@ -421,6 +416,7 @@ func runMacClear() error {
 	fmt.Println("The Mac implementation will include:")
 	fmt.Println("  - Homebrew cleanup")
 	fmt.Println("  - macOS-specific file removal")
+	fmt.Println("  - UV virtual environment cleanup")
 	return nil
 }
 
@@ -429,5 +425,6 @@ func runWindowsClear() error {
 	fmt.Println("The Windows implementation will include:")
 	fmt.Println("  - Windows-specific cleanup")
 	fmt.Println("  - Registry cleanup if needed")
+	fmt.Println("  - UV virtual environment cleanup")
 	return nil
 }
