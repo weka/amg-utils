@@ -195,38 +195,28 @@ func customizeActivationScript(uvEnvPath string) error {
 		return fmt.Errorf("failed to read activation script: %w", err)
 	}
 
-	// Replace the VIRTUAL_ENV_PROMPT setting to use "amg" instead of the directory name
 	contentStr := string(content)
 
-	// Find and replace the VIRTUAL_ENV_PROMPT assignment
-	// The default script sets VIRTUAL_ENV_PROMPT based on the directory name
-	// We want to override it to always show "amg"
-	if strings.Contains(contentStr, "VIRTUAL_ENV_PROMPT=") {
-		// Replace existing VIRTUAL_ENV_PROMPT line
-		lines := strings.Split(contentStr, "\n")
-		for i, line := range lines {
-			if strings.Contains(line, "VIRTUAL_ENV_PROMPT=") && !strings.Contains(line, "#") {
-				lines[i] = `VIRTUAL_ENV_PROMPT="amg"`
-				break
-			}
-		}
-		contentStr = strings.Join(lines, "\n")
-	} else {
-		// If VIRTUAL_ENV_PROMPT is not found, add it after the VIRTUAL_ENV assignment
-		lines := strings.Split(contentStr, "\n")
-		for i, line := range lines {
-			if strings.Contains(line, "VIRTUAL_ENV=") && !strings.Contains(line, "#") {
-				// Insert the custom prompt after VIRTUAL_ENV
-				newLines := make([]string, len(lines)+1)
-				copy(newLines[:i+1], lines[:i+1])
-				newLines[i+1] = `VIRTUAL_ENV_PROMPT="amg"`
-				copy(newLines[i+2:], lines[i+1:])
-				lines = newLines
-				break
-			}
-		}
-		contentStr = strings.Join(lines, "\n")
+	// The UV activation script has a conditional that determines VIRTUAL_ENV_PROMPT
+	// We need to fix the condition to always use our custom prompt
+	// Look for the pattern: if [ "x" != x ] ; then
+	// and replace it with: if [ "x" = "x" ] ; then
+	// This ensures the custom prompt is always used
+	if strings.Contains(contentStr, `if [ "x" != x ] ; then`) {
+		contentStr = strings.ReplaceAll(contentStr, `if [ "x" != x ] ; then`, `if [ "x" = "x" ] ; then`)
 	}
+
+	// Also ensure the VIRTUAL_ENV_PROMPT is set to "amg" in the true branch
+	// Look for VIRTUAL_ENV_PROMPT="..." pattern and replace with our value
+	lines := strings.Split(contentStr, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, `VIRTUAL_ENV_PROMPT="`) && !strings.Contains(line, "#") {
+			lines[i] = strings.Replace(line, trimmed, `VIRTUAL_ENV_PROMPT="amg"`, 1)
+			break
+		}
+	}
+	contentStr = strings.Join(lines, "\n")
 
 	// Write the modified content back
 	err = os.WriteFile(activateScript, []byte(contentStr), 0755)
