@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "0.1.0"
+const version = "0.1.1"
 
 var rootCmd = &cobra.Command{
 	Use:   "amgctl",
@@ -28,4 +28,5 @@ func init() {
 	// Add subcommands
 	rootCmd.AddCommand(hostCmd)
 	rootCmd.AddCommand(dockerCmd)
+	rootCmd.AddCommand(updateCmd)
 }

@@ -27,6 +27,16 @@ build-all: clean
 	GOOS=darwin GOARCH=arm64 go build -o $(BINARY_NAME)-darwin-arm64 $(MAIN_PACKAGE)
 	GOOS=windows GOARCH=amd64 go build -o $(BINARY_NAME)-windows-amd64.exe $(MAIN_PACKAGE)
 
+# Build release binaries with optimizations (for GitHub releases)
+.PHONY: build-release
+build-release: clean
+	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o $(BINARY_NAME)-linux-amd64 $(MAIN_PACKAGE)
+	GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o $(BINARY_NAME)-linux-arm64 $(MAIN_PACKAGE)
+	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o $(BINARY_NAME)-darwin-amd64 $(MAIN_PACKAGE)
+	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o $(BINARY_NAME)-windows-amd64.exe $(MAIN_PACKAGE)
+	@echo "Note: darwin/arm64 build skipped due to Go version compatibility"
+	sha256sum $(BINARY_NAME)-* > checksums.txt
+
 # Run tests
 .PHONY: test
 test:
@@ -106,6 +116,7 @@ help:
 	@echo "Available targets:"
 	@echo "  build        - Build the binary for current platform"
 	@echo "  build-all    - Build binaries for all platforms"
+	@echo "  build-release - Build optimized release binaries with checksums"
 	@echo "  clean        - Remove build artifacts"
 	@echo "  deps         - Install and tidy dependencies"
 	@echo "  test         - Run tests"

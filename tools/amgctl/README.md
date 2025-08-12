@@ -4,12 +4,13 @@
 
 ## Version
 
-Current version: **0.1.0**
+Current version: **0.1.1**
 
 ## Features
 
 - **Host Environment Management**: Set up, monitor, and clean up AMG environments
 - **Cross-Platform Support**: Works on Linux, macOS, and Windows (with platform-specific implementations)
+- **Self-Update**: Automatically update to the latest version from GitHub releases
 - **Docker Integration**: Manage Docker containers and resources (placeholder for future implementation)
 - **Automated Setup**: Replicates the functionality of `setup_lmcache_stable.sh` script
 
@@ -134,6 +135,31 @@ Remove all components created by the setup command:
 This command:
 - Removes the `amg_stable` UV virtual environment
 - Deletes the `~/amg_stable` directory and all contents
+
+### Self-Update
+
+#### Update to Latest Version
+Update amgctl to the latest version from GitHub releases:
+
+```bash
+./amgctl update
+```
+
+This command will:
+- Check for the latest release on GitHub
+- Download the appropriate binary for your platform
+- Verify the download integrity using SHA256 checksums
+- Replace the current binary atomically with rollback capability
+
+#### Update Options
+
+```bash
+# Force update even if already on latest version
+./amgctl update --force
+
+# Include pre-release versions
+./amgctl update --prerelease
+```
 
 ### Docker Management (Placeholder)
 
