@@ -76,7 +76,7 @@ const (
 	repoName    = "LMCache"
 	commitHash  = "c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d"
 	vllmVersion = "0.9.2"
-	stateFile   = "amg_setup_state.json"
+	stateFile   = ".amg_setup_state.json"
 )
 
 // SetupState tracks the configuration used during setup
@@ -148,7 +148,80 @@ func commandExists(cmd string) bool {
 	return err == nil
 }
 
+// isCondaActive checks if a conda environment is currently active
+func isCondaActive() bool {
+	condaEnv := os.Getenv("CONDA_DEFAULT_ENV")
+	condaPrefix := os.Getenv("CONDA_PREFIX")
+	return condaEnv != "" || condaPrefix != ""
+}
+
+// checkCondaDeactivated ensures no conda environment is active
+func checkCondaDeactivated() error {
+	if isCondaActive() {
+		return fmt.Errorf("conda environment is currently active. Please deactivate your conda environment before using amgctl host commands:\n  conda deactivate")
+	}
+	return nil
+}
+
+// customizeActivationScript modifies the virtual environment activation script
+// to show "(amg)" instead of "(.venv)" in the prompt
+func customizeActivationScript(uvEnvPath string) error {
+	activateScript := filepath.Join(uvEnvPath, "bin", "activate")
+
+	// Read the current activation script
+	content, err := os.ReadFile(activateScript)
+	if err != nil {
+		return fmt.Errorf("failed to read activation script: %w", err)
+	}
+
+	// Replace the VIRTUAL_ENV_PROMPT setting to use "amg" instead of the directory name
+	contentStr := string(content)
+
+	// Find and replace the VIRTUAL_ENV_PROMPT assignment
+	// The default script sets VIRTUAL_ENV_PROMPT based on the directory name
+	// We want to override it to always show "amg"
+	if strings.Contains(contentStr, "VIRTUAL_ENV_PROMPT=") {
+		// Replace existing VIRTUAL_ENV_PROMPT line
+		lines := strings.Split(contentStr, "\n")
+		for i, line := range lines {
+			if strings.Contains(line, "VIRTUAL_ENV_PROMPT=") && !strings.Contains(line, "#") {
+				lines[i] = `VIRTUAL_ENV_PROMPT="amg"`
+				break
+			}
+		}
+		contentStr = strings.Join(lines, "\n")
+	} else {
+		// If VIRTUAL_ENV_PROMPT is not found, add it after the VIRTUAL_ENV assignment
+		lines := strings.Split(contentStr, "\n")
+		for i, line := range lines {
+			if strings.Contains(line, "VIRTUAL_ENV=") && !strings.Contains(line, "#") {
+				// Insert the custom prompt after VIRTUAL_ENV
+				newLines := make([]string, len(lines)+1)
+				copy(newLines[:i+1], lines[:i+1])
+				newLines[i+1] = `VIRTUAL_ENV_PROMPT="amg"`
+				copy(newLines[i+2:], lines[i+1:])
+				lines = newLines
+				break
+			}
+		}
+		contentStr = strings.Join(lines, "\n")
+	}
+
+	// Write the modified content back
+	err = os.WriteFile(activateScript, []byte(contentStr), 0755)
+	if err != nil {
+		return fmt.Errorf("failed to write modified activation script: %w", err)
+	}
+
+	return nil
+}
+
 func runHostSetup(cmd *cobra.Command) error {
+	// Check that conda is not active
+	if err := checkCondaDeactivated(); err != nil {
+		return err
+	}
+
 	fmt.Println("🚀 Starting AMG environment setup...")
 
 	// Get flag values
@@ -216,6 +289,16 @@ func runLinuxSetup(state *SetupState) error {
 	}
 
 	fmt.Println("🎉 Setup completed successfully!")
+	fmt.Println()
+	fmt.Println("📋 Next Steps:")
+	fmt.Println("  1. Navigate to the AMG environment directory:")
+	fmt.Printf("     cd %s\n", getBasePath())
+	fmt.Println("  2. Activate the virtual environment:")
+	fmt.Println("     source .venv/bin/activate")
+	fmt.Println("  3. Your shell prompt will show '(amg)' when the environment is active")
+	fmt.Println("  4. To deactivate later, simply run: deactivate")
+	fmt.Println()
+	fmt.Println("🚀 You're ready to use the AMG environment!")
 	return nil
 }
 
@@ -266,6 +349,11 @@ func setupUvEnvironment(state *SetupState) error {
 		}
 
 		fmt.Printf("✅ UV virtual environment '%s' created successfully.\n", uvEnvName)
+
+		// Customize the activation script to show "(amg)" instead of "(.venv)"
+		if err := customizeActivationScript(uvEnvPath); err != nil {
+			fmt.Printf("⚠️ Warning: Failed to customize activation script: %v\n", err)
+		}
 
 		// Install packages for new environment
 		if err := installUvPackages(state); err != nil {
@@ -505,6 +593,11 @@ func installRepositoryDependencies(repoPath string, state *SetupState) error {
 }
 
 func runHostUpdate() error {
+	// Check that conda is not active
+	if err := checkCondaDeactivated(); err != nil {
+		return err
+	}
+
 	fmt.Println("🔄 Updating LMCache repository...")
 
 	// Load the setup state to check if we're following a branch

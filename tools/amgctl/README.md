@@ -146,6 +146,34 @@ Examples:
 ./amgctl host setup --lmcache-branch main --vllm-version 0.9.2
 ```
 
+#### After Setup: Using the AMG Environment
+
+Once the setup is complete, follow these steps to start using the AMG environment:
+
+1. **Navigate to the AMG environment directory**:
+   ```bash
+   cd ~/amg_stable
+   ```
+
+2. **Activate the virtual environment**:
+   ```bash
+   source .venv/bin/activate
+   ```
+
+3. **Verify activation**: Your shell prompt should now show `(amg)` at the beginning, indicating the environment is active.
+
+4. **Use the AMG tools**: You can now run LMCache and other AMG tools within this environment.
+
+5. **Deactivate when done**: To return to your normal shell environment, run:
+   ```bash
+   deactivate
+   ```
+
+**Important Notes**:
+- Always ensure you have deactivated any conda environments before running amgctl host commands
+- The environment is located at `~/amg_stable/` with the virtual environment in `~/amg_stable/.venv/`
+- The LMCache repository is cloned to `~/amg_stable/LMCache/`
+
 #### Check Environment Status
 Display the current status of the AMG environment (placeholder):
 
