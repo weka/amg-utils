@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -42,7 +43,7 @@ var hostClearCmd = &cobra.Command{
 	Short: "Clear the AMG environment",
 	Long:  `Remove UV virtual environments, repositories, and other artifacts created by 'amgctl host setup'.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runHostClear()
+		return runHostClear(cmd)
 	},
 }
 
@@ -64,22 +65,25 @@ func init() {
 	// Add flags to hostSetupCmd
 	hostSetupCmd.Flags().Bool("skip-hotfixes", false, "Skip applying hotfixes like downgrading transformers")
 	hostSetupCmd.Flags().String("lmcache-repo", repoURL, "Alternative LMCache repository URL")
-	hostSetupCmd.Flags().String("lmcache-commit", commitHash, "Specific commit hash for LMCache repository")
-	hostSetupCmd.Flags().String("lmcache-branch", "", "Branch to follow for LMCache repository (overrides commit)")
+	hostSetupCmd.Flags().String("lmcache-commit", "", "Specific commit hash for LMCache repository")
+	hostSetupCmd.Flags().String("lmcache-branch", defaultBranch, "Branch to follow for LMCache repository (overrides commit)")
 	hostSetupCmd.Flags().String("vllm-version", vllmVersion, "vLLM version to install (e.g., 0.9.2, 0.10.0)")
 
 	// Add flags to hostStatusCmd
 	hostStatusCmd.Flags().BoolP("verbose", "v", false, "Show detailed information including installed packages and system resources")
+
+	// Add flags to hostClearCmd
+	hostClearCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt and proceed with deletion")
 }
 
 // Configuration constants
 const (
-	uvEnvName   = "amg_stable"
-	repoURL     = "git@github.com:weka/weka-LMCache.git"
-	repoName    = "LMCache"
-	commitHash  = "c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d"
-	vllmVersion = "0.9.2"
-	stateFile   = ".amg_setup_state.json"
+	uvEnvName     = "amg_stable"
+	repoURL       = "git@github.com:weka/weka-LMCache.git"
+	repoName      = "LMCache"
+	defaultBranch = "dev"
+	vllmVersion   = "0.9.2"
+	stateFile     = ".amg_setup_state.json"
 )
 
 // SetupState tracks the configuration used during setup
@@ -164,6 +168,20 @@ func checkCondaDeactivated() error {
 		return fmt.Errorf("conda environment is currently active. Please deactivate your conda environment before using amgctl host commands:\n  conda deactivate")
 	}
 	return nil
+}
+
+// askForConfirmation prompts the user for a yes/no confirmation
+func askForConfirmation(prompt string) (bool, error) {
+	fmt.Printf("%s (y/N): ", prompt)
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false, fmt.Errorf("failed to read user input: %w", err)
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	return response == "y" || response == "yes", nil
 }
 
 // customizeActivationScript modifies the virtual environment activation script
@@ -715,8 +733,40 @@ func runHostStatus(cmd *cobra.Command) error {
 	return nil
 }
 
-func runHostClear() error {
+func runHostClear(cmd *cobra.Command) error {
 	fmt.Println("🧹 Clearing AMG environment...")
+	fmt.Println()
+
+	// Check if --yes flag was provided
+	skipConfirmation, _ := cmd.Flags().GetBool("yes")
+
+	// Show what will be deleted
+	basePath := getBasePath()
+	fmt.Printf("This will permanently delete the AMG environment directory and all its contents:\n")
+	fmt.Printf("  📁 %s\n", basePath)
+	fmt.Println("  - UV virtual environment (.venv)")
+	fmt.Println("  - LMCache repository")
+	fmt.Println("  - All installed packages")
+	fmt.Println("  - Setup state and configuration")
+	fmt.Println()
+
+	// Ask for confirmation unless --yes flag was provided
+	if !skipConfirmation {
+		confirmed, err := askForConfirmation("Are you sure you want to proceed with this destructive operation?")
+		if err != nil {
+			return fmt.Errorf("failed to get user confirmation: %w", err)
+		}
+
+		if !confirmed {
+			fmt.Println("❌ Operation cancelled by user")
+			return nil
+		}
+
+		fmt.Println("✅ Confirmed. Proceeding with cleanup...")
+	} else {
+		fmt.Println("✅ Skipping confirmation (--yes flag provided). Proceeding with cleanup...")
+	}
+	fmt.Println()
 
 	// Handle cross-platform differences
 	switch runtime.GOOS {

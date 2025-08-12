@@ -119,7 +119,7 @@ This command performs the following actions:
    - py-spy, scalene, pyinstrument, line_profiler, fastsafetensors
 4. **Repository Management**: 
    - Clones `weka-LMCache` repository to `~/amg_stable/LMCache`
-   - Checks out specific commit: `c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d`
+   - Checks out and tracks the `dev` branch by default
 5. **Dependencies**: Installs repository dependencies from requirements files (with --no-build-isolation)
 6. **Editable Install**: Installs the repository in editable mode (with --no-build-isolation)
 7. **Hot-patches**: Downgrades transformers package for compatibility
@@ -233,7 +233,7 @@ The tool uses the following default configuration values:
 - **UV Virtual Environment Name**: `amg_stable`
 - **Repository URL**: `git@github.com:weka/weka-LMCache.git`
 - **Repository Name**: `LMCache`
-- **Target Commit**: `c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d`
+- **Default Branch**: `dev` (can be overridden with `--lmcache-branch` or `--lmcache-commit`)
 - **Base Path**: `~/amg_stable`
 - **vLLM Version**: `0.9.2` (configurable via `--vllm-version` flag)
 
