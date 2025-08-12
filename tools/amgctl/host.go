@@ -33,7 +33,7 @@ var hostStatusCmd = &cobra.Command{
 	Short: "Show AMG environment status",
 	Long:  `Display the current status of the AMG environment including UV virtual environments and repositories.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runHostStatus()
+		return runHostStatus(cmd)
 	},
 }
 
@@ -67,6 +67,9 @@ func init() {
 	hostSetupCmd.Flags().String("lmcache-commit", commitHash, "Specific commit hash for LMCache repository")
 	hostSetupCmd.Flags().String("lmcache-branch", "", "Branch to follow for LMCache repository (overrides commit)")
 	hostSetupCmd.Flags().String("vllm-version", vllmVersion, "vLLM version to install (e.g., 0.9.2, 0.10.0)")
+
+	// Add flags to hostStatusCmd
+	hostStatusCmd.Flags().BoolP("verbose", "v", false, "Show detailed information including installed packages and system resources")
 }
 
 // Configuration constants
@@ -671,14 +674,44 @@ func runHostUpdate() error {
 	return nil
 }
 
-func runHostStatus() error {
+func runHostStatus(cmd *cobra.Command) error {
+	verbose, _ := cmd.Flags().GetBool("verbose")
+
 	fmt.Println("📊 AMG Environment Status")
-	fmt.Println("This is a placeholder for host status functionality.")
-	fmt.Println("Will show:")
-	fmt.Println("  - UV virtual environment status")
-	fmt.Println("  - Repository status and commit")
-	fmt.Println("  - Installed packages")
-	fmt.Println("  - System resources")
+	fmt.Println("=" + strings.Repeat("=", 50))
+
+	// Check UV virtual environment status
+	if err := showUvEnvironmentStatus(); err != nil {
+		fmt.Printf("❌ Error checking UV environment: %v\n", err)
+	}
+
+	fmt.Println() // Add spacing
+
+	// Check repository status
+	if err := showRepositoryStatus(); err != nil {
+		fmt.Printf("❌ Error checking repository: %v\n", err)
+	}
+
+	// Show installed packages and system resources only in verbose mode
+	if verbose {
+		fmt.Println() // Add spacing
+
+		// Show installed packages
+		if err := showInstalledPackages(); err != nil {
+			fmt.Printf("❌ Error checking installed packages: %v\n", err)
+		}
+
+		fmt.Println() // Add spacing
+
+		// Show system resources
+		if err := showSystemResources(); err != nil {
+			fmt.Printf("❌ Error checking system resources: %v\n", err)
+		}
+	} else {
+		fmt.Println()
+		fmt.Println("💡 Use --verbose or -v to show installed packages and system resources")
+	}
+
 	return nil
 }
 
@@ -734,4 +767,338 @@ func runWindowsClear() error {
 	fmt.Println("  - Registry cleanup if needed")
 	fmt.Println("  - UV virtual environment cleanup")
 	return nil
+}
+
+// showUvEnvironmentStatus displays the status of the UV virtual environment
+func showUvEnvironmentStatus() error {
+	fmt.Println("🐍 UV Virtual Environment Status:")
+	fmt.Println("-" + strings.Repeat("-", 30))
+
+	basePath := getBasePath()
+	uvEnvPath := getUvEnvPath()
+
+	// Check if base directory exists
+	if _, err := os.Stat(basePath); os.IsNotExist(err) {
+		fmt.Println("❌ AMG environment directory not found")
+		fmt.Printf("   Expected location: %s\n", basePath)
+		fmt.Println("   Run 'amgctl host setup' to create the environment")
+		return nil
+	}
+
+	fmt.Printf("✅ Base directory: %s\n", basePath)
+
+	// Check if UV virtual environment exists
+	if _, err := os.Stat(uvEnvPath); os.IsNotExist(err) {
+		fmt.Println("❌ UV virtual environment not found")
+		fmt.Printf("   Expected location: %s\n", uvEnvPath)
+		fmt.Println("   Run 'amgctl host setup' to create the environment")
+		return nil
+	}
+
+	fmt.Printf("✅ UV virtual environment: %s\n", uvEnvPath)
+
+	// Check if UV command is available
+	if !commandExists("uv") {
+		fmt.Println("❌ UV command not found in PATH")
+		return nil
+	}
+
+	// Check Python version in the virtual environment
+	cmd := exec.Command("uv", "run", "python", "--version")
+	cmd.Dir = basePath
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("⚠️  Could not determine Python version: %v\n", err)
+	} else {
+		pythonVersion := strings.TrimSpace(string(output))
+		fmt.Printf("✅ Python version: %s\n", pythonVersion)
+	}
+
+	// Check if environment is currently active
+	virtualEnv := os.Getenv("VIRTUAL_ENV")
+	if virtualEnv == uvEnvPath {
+		fmt.Println("✅ Virtual environment is currently ACTIVE")
+	} else if virtualEnv != "" {
+		fmt.Printf("⚠️  Different virtual environment is active: %s\n", virtualEnv)
+	} else {
+		fmt.Println("ℹ️  Virtual environment is not currently active")
+		fmt.Println("   To activate: source " + filepath.Join(uvEnvPath, "bin", "activate"))
+	}
+
+	return nil
+}
+
+// showRepositoryStatus displays the status of the LMCache repository
+func showRepositoryStatus() error {
+	fmt.Println("📁 Repository Status:")
+	fmt.Println("-" + strings.Repeat("-", 20))
+
+	repoPath := getRepoPath()
+
+	// Check if repository exists
+	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+		fmt.Println("❌ LMCache repository not found")
+		fmt.Printf("   Expected location: %s\n", repoPath)
+		fmt.Println("   Run 'amgctl host setup' to clone the repository")
+		return nil
+	}
+
+	fmt.Printf("✅ Repository location: %s\n", repoPath)
+
+	// Load setup state to see configuration
+	state, err := loadSetupState()
+	if err != nil {
+		fmt.Printf("⚠️  Could not load setup state: %v\n", err)
+	} else if state != nil {
+		fmt.Printf("📋 Repository URL: %s\n", state.LMCacheRepo)
+		if state.LMCacheBranch != "" {
+			fmt.Printf("🌿 Following branch: %s\n", state.LMCacheBranch)
+		} else if state.LMCacheCommit != "" {
+			fmt.Printf("📌 Pinned to commit: %s\n", state.LMCacheCommit)
+		}
+	}
+
+	// Get current commit
+	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("⚠️  Could not get current commit: %v\n", err)
+	} else {
+		currentCommit := strings.TrimSpace(string(output))
+		fmt.Printf("📍 Current commit: %s\n", currentCommit[:8]+"...")
+	}
+
+	// Get current branch/status
+	cmd = exec.Command("git", "-C", repoPath, "branch", "--show-current")
+	output, err = cmd.Output()
+	if err == nil {
+		currentBranch := strings.TrimSpace(string(output))
+		if currentBranch != "" {
+			fmt.Printf("🌿 Current branch: %s\n", currentBranch)
+		} else {
+			fmt.Println("📍 In detached HEAD state")
+		}
+	}
+
+	// Check for uncommitted changes
+	cmd = exec.Command("git", "-C", repoPath, "status", "--porcelain")
+	output, err = cmd.Output()
+	if err != nil {
+		fmt.Printf("⚠️  Could not check git status: %v\n", err)
+	} else {
+		changes := strings.TrimSpace(string(output))
+		if changes == "" {
+			fmt.Println("✅ Working directory is clean")
+		} else {
+			fmt.Println("⚠️  Uncommitted changes detected:")
+			lines := strings.Split(changes, "\n")
+			for i, line := range lines {
+				if i < 5 { // Show first 5 changes
+					fmt.Printf("   %s\n", line)
+				} else {
+					fmt.Printf("   ... and %d more changes\n", len(lines)-5)
+					break
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// showInstalledPackages displays information about installed Python packages
+func showInstalledPackages() error {
+	fmt.Println("📦 Installed Packages:")
+	fmt.Println("-" + strings.Repeat("-", 20))
+
+	basePath := getBasePath()
+
+	// Check key packages that should be installed
+	keyPackages := []string{
+		"vllm",
+		"torch",
+		"transformers",
+		"py-spy",
+		"scalene",
+		"pyinstrument",
+		"line_profiler",
+		"fastsafetensors",
+	}
+
+	fmt.Println("🔍 Checking key packages:")
+	for _, pkg := range keyPackages {
+		cmd := exec.Command("uv", "pip", "show", pkg)
+		cmd.Dir = basePath
+		output, err := cmd.Output()
+		if err != nil {
+			fmt.Printf("❌ %s: Not installed\n", pkg)
+		} else {
+			// Extract version from pip show output
+			lines := strings.Split(string(output), "\n")
+			version := "unknown"
+			for _, line := range lines {
+				if strings.HasPrefix(line, "Version: ") {
+					version = strings.TrimPrefix(line, "Version: ")
+					break
+				}
+			}
+			fmt.Printf("✅ %s: %s\n", pkg, version)
+		}
+	}
+
+	// Show total package count
+	cmd := exec.Command("uv", "pip", "list", "--format=freeze")
+	cmd.Dir = basePath
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("⚠️  Could not list all packages: %v\n", err)
+	} else {
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		packageCount := 0
+		for _, line := range lines {
+			if strings.TrimSpace(line) != "" {
+				packageCount++
+			}
+		}
+		fmt.Printf("📊 Total packages installed: %d\n", packageCount)
+	}
+
+	return nil
+}
+
+// showSystemResources displays system resource information
+func showSystemResources() error {
+	fmt.Println("💻 System Resources:")
+	fmt.Println("-" + strings.Repeat("-", 18))
+
+	// Operating system info
+	fmt.Printf("🖥️  Operating System: %s %s\n", runtime.GOOS, runtime.GOARCH)
+
+	// CPU info
+	fmt.Printf("⚙️  CPU Cores: %d\n", runtime.NumCPU())
+
+	// Memory info (Linux specific)
+	if runtime.GOOS == "linux" {
+		showLinuxMemoryInfo()
+	}
+
+	// Disk space for AMG directory
+	showDiskSpace()
+
+	// GPU info (if available)
+	showGPUInfo()
+
+	return nil
+}
+
+// showLinuxMemoryInfo displays Linux-specific memory information
+func showLinuxMemoryInfo() {
+	// Read /proc/meminfo for memory information
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		fmt.Printf("⚠️  Could not read memory info: %v\n", err)
+		return
+	}
+
+	lines := strings.Split(string(data), "\n")
+	memInfo := make(map[string]string)
+
+	for _, line := range lines {
+		if strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				value := strings.TrimSpace(parts[1])
+				memInfo[key] = value
+			}
+		}
+	}
+
+	if memTotal, ok := memInfo["MemTotal"]; ok {
+		fmt.Printf("🧠 Memory Total: %s\n", memTotal)
+	}
+	if memAvailable, ok := memInfo["MemAvailable"]; ok {
+		fmt.Printf("🧠 Memory Available: %s\n", memAvailable)
+	}
+}
+
+// showDiskSpace displays disk space information for the AMG directory
+func showDiskSpace() {
+	basePath := getBasePath()
+
+	// Use df command to get disk space
+	cmd := exec.Command("df", "-h", basePath)
+	output, err := cmd.Output()
+	if err != nil {
+		// If basePath doesn't exist, check parent directory
+		parentPath := filepath.Dir(basePath)
+		cmd = exec.Command("df", "-h", parentPath)
+		output, err = cmd.Output()
+		if err != nil {
+			fmt.Printf("⚠️  Could not check disk space: %v\n", err)
+			return
+		}
+	}
+
+	lines := strings.Split(string(output), "\n")
+	if len(lines) >= 2 {
+		// Parse df output (typically: Filesystem Size Used Avail Use% Mounted on)
+		fields := strings.Fields(lines[1])
+		if len(fields) >= 4 {
+			fmt.Printf("💾 Disk Available: %s (Total: %s, Used: %s)\n", fields[3], fields[1], fields[2])
+		}
+	}
+}
+
+// showGPUInfo displays GPU information if available
+func showGPUInfo() {
+	// Try nvidia-smi first
+	cmd := exec.Command("nvidia-smi", "--query-gpu=name,memory.total,memory.used,memory.free", "--format=csv,noheader,nounits")
+	output, err := cmd.Output()
+	if err == nil {
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		fmt.Printf("🎮 GPU Count: %d\n", len(lines))
+		for i, line := range lines {
+			fields := strings.Split(line, ", ")
+			if len(fields) >= 4 {
+				name := fields[0]
+				total := fields[1]
+				used := fields[2]
+				free := fields[3]
+				fmt.Printf("   GPU %d: %s (Memory: %s MB total, %s MB used, %s MB free)\n",
+					i, name, total, used, free)
+			}
+		}
+		return
+	}
+
+	// Try lspci for basic GPU info
+	cmd = exec.Command("lspci")
+	output, err = cmd.Output()
+	if err != nil {
+		fmt.Println("ℹ️  No GPU information available")
+		return
+	}
+
+	lines := strings.Split(string(output), "\n")
+	gpuCount := 0
+	for _, line := range lines {
+		if strings.Contains(strings.ToLower(line), "vga") ||
+			strings.Contains(strings.ToLower(line), "3d") ||
+			strings.Contains(strings.ToLower(line), "display") {
+			if gpuCount == 0 {
+				fmt.Println("🎮 GPU Devices:")
+			}
+			gpuCount++
+			// Extract device name (after colon)
+			if idx := strings.Index(line, ": "); idx != -1 {
+				deviceName := line[idx+2:]
+				fmt.Printf("   GPU %d: %s\n", gpuCount-1, deviceName)
+			}
+		}
+	}
+
+	if gpuCount == 0 {
+		fmt.Println("ℹ️  No GPU devices found")
+	}
 }
