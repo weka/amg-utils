@@ -51,7 +51,12 @@ go mod init github.com/weka/amg-scripts/tools/amgctl
 go get github.com/spf13/cobra@latest
 ```
 
-4. Build the binary:
+4. Install Git hooks (recommended for development):
+```bash
+make install-hooks
+```
+
+5. Build the binary:
 ```bash
 go build -o amgctl .
 # Or using Make
@@ -186,6 +191,40 @@ The tool provides comprehensive error handling:
 3. Add the command to the root command in `main.go`
 4. Implement platform-specific logic as needed
 
+### Git Hooks Setup
+
+The project includes Git hooks that automatically run linting and formatting checks on commit:
+
+#### Installation
+
+```bash
+# Install hooks (run once after cloning)
+make install-hooks
+
+# Or manually
+./scripts/install-hooks.sh
+```
+
+#### Behavior
+
+- **Automatic**: Runs when you commit changes to `tools/amgctl/`
+- **Smart**: Only runs checks when amgctl files are modified  
+- **Comprehensive**: Runs `make fmt-check`, `make vet`, and `make lint`
+- **Helpful**: Provides clear error messages and fix suggestions
+
+```bash
+# Normal commit - hook runs automatically
+git commit -m "Fix bug in host setup"
+
+# Skip hook if needed (not recommended)
+git commit --no-verify -m "Emergency commit"
+
+# If hook fails, fix issues and retry
+make fix              # Auto-fix formatting and linting
+git add .            # Stage the fixes
+git commit -m "..."  # Commit again
+```
+
 ### Make Commands
 
 The project includes a comprehensive Makefile with linting, formatting, and build targets:
@@ -214,6 +253,9 @@ make build-all
 # Clean build artifacts
 make clean
 
+# Install Git hooks for automatic linting on commit
+make install-hooks
+
 # Show all available targets
 make help
 ```
@@ -238,11 +280,15 @@ make build
 
 1. Fork the repository
 2. Create a feature branch
-3. Make your changes
-4. Run linting and formatting checks: `make lint-all`
-5. Fix any issues: `make fix`
+3. **Setup**: Install Git hooks with `make install-hooks`
+4. Make your changes
+5. **Automatic**: Linting runs on commit via Git hooks
+   - Or manually run: `make lint-all`
+   - Fix issues with: `make fix`
 6. Test on your platform
 7. Submit a pull request
+
+**Note**: Git hooks automatically run when you commit changes to amgctl. Install them once with `make install-hooks`.
 
 ## License
 

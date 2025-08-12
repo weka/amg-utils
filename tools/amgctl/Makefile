@@ -90,6 +90,12 @@ fix: fmt
 	fi
 	$(GOLANGCI_LINT) run --fix
 
+# Install Git hooks
+.PHONY: install-hooks
+install-hooks:
+	@echo "Installing Git hooks..."
+	@./scripts/install-hooks.sh
+
 # Install locally
 .PHONY: install
 install: build
@@ -110,5 +116,6 @@ help:
 	@echo "  lint-install - Install golangci-lint if not present"
 	@echo "  lint-all     - Run all linting and formatting checks"
 	@echo "  fix          - Fix all formatting and auto-fixable linting issues"
+	@echo "  install-hooks - Install Git hooks for automatic linting"
 	@echo "  install      - Install binary to /usr/local/bin"
 	@echo "  help         - Show this help message"
