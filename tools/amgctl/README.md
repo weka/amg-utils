@@ -103,20 +103,49 @@ Set up the complete AMG environment including UV virtual environment, repository
 
 ```bash
 ./amgctl host setup
+
+# Install with a different vLLM version
+./amgctl host setup --vllm-version 0.10.0
+
+# Other available flags
+./amgctl host setup --skip-hotfixes --vllm-version 0.9.1
 ```
 
 This command performs the following actions:
 1. **Initial Checks**: Verifies that uv and git are installed
 2. **UV Virtual Environment**: Creates `amg_stable` virtual environment with Python 3.12
 3. **Package Installation**: Installs required Python packages including:
-   - vLLM wheel from specific commit
-   - py-spy, scalene, pyinstrument, line_profiler
+   - torch (installed first to resolve build dependencies)
+   - vLLM version 0.9.2 (configurable via `--vllm-version` flag)
+   - py-spy, scalene, pyinstrument, line_profiler, fastsafetensors
 4. **Repository Management**: 
    - Clones `weka-LMCache` repository to `~/amg_stable/LMCache`
    - Checks out specific commit: `c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d`
-5. **Dependencies**: Installs repository dependencies from requirements files
-6. **Editable Install**: Installs the repository in editable mode
+5. **Dependencies**: Installs repository dependencies from requirements files (with --no-build-isolation)
+6. **Editable Install**: Installs the repository in editable mode (with --no-build-isolation)
 7. **Hot-patches**: Downgrades transformers package for compatibility
+
+#### Setup Command Options
+
+The `host setup` command supports several flags for customization:
+
+- `--vllm-version`: Specify vLLM version to install (default: "0.9.2")
+- `--skip-hotfixes`: Skip applying hotfixes like downgrading transformers
+- `--lmcache-repo`: Alternative LMCache repository URL
+- `--lmcache-commit`: Specific commit hash for LMCache repository
+- `--lmcache-branch`: Branch to follow for LMCache repository (overrides commit)
+
+Examples:
+```bash
+# Use different vLLM version
+./amgctl host setup --vllm-version 0.10.0
+
+# Skip hotfixes and use custom vLLM version
+./amgctl host setup --skip-hotfixes --vllm-version 0.9.1
+
+# Use different repository branch
+./amgctl host setup --lmcache-branch main --vllm-version 0.9.2
+```
 
 #### Check Environment Status
 Display the current status of the AMG environment (placeholder):
@@ -179,7 +208,7 @@ The tool uses the following default configuration values:
 - **Repository Name**: `LMCache`
 - **Target Commit**: `c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d`
 - **Base Path**: `~/amg_stable`
-- **vLLM Commit**: `b6553be1bc75f046b00046a4ad7576364d03c835`
+- **vLLM Version**: `0.9.2` (configurable via `--vllm-version` flag)
 
 These values are currently hardcoded but may be made configurable in future versions.
 

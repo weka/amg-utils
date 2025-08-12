@@ -66,17 +66,17 @@ func init() {
 	hostSetupCmd.Flags().String("lmcache-repo", repoURL, "Alternative LMCache repository URL")
 	hostSetupCmd.Flags().String("lmcache-commit", commitHash, "Specific commit hash for LMCache repository")
 	hostSetupCmd.Flags().String("lmcache-branch", "", "Branch to follow for LMCache repository (overrides commit)")
-	hostSetupCmd.Flags().String("vllm-commit", vllmCommit, "Alternative vLLM commit hash")
+	hostSetupCmd.Flags().String("vllm-version", vllmVersion, "vLLM version to install (e.g., 0.9.2, 0.10.0)")
 }
 
 // Configuration constants
 const (
-	uvEnvName  = "amg_stable"
-	repoURL    = "git@github.com:weka/weka-LMCache.git"
-	repoName   = "LMCache"
-	commitHash = "c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d"
-	vllmCommit = "b6553be1bc75f046b00046a4ad7576364d03c835"
-	stateFile  = "amg_setup_state.json"
+	uvEnvName   = "amg_stable"
+	repoURL     = "git@github.com:weka/weka-LMCache.git"
+	repoName    = "LMCache"
+	commitHash  = "c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d"
+	vllmVersion = "0.9.2"
+	stateFile   = "amg_setup_state.json"
 )
 
 // SetupState tracks the configuration used during setup
@@ -84,7 +84,7 @@ type SetupState struct {
 	LMCacheRepo   string `json:"lmcache_repo"`
 	LMCacheCommit string `json:"lmcache_commit,omitempty"`
 	LMCacheBranch string `json:"lmcache_branch,omitempty"`
-	VLLMCommit    string `json:"vllm_commit"`
+	VLLMVersion   string `json:"vllm_version"`
 	SkipHotfixes  bool   `json:"skip_hotfixes"`
 }
 
@@ -156,14 +156,14 @@ func runHostSetup(cmd *cobra.Command) error {
 	lmcacheRepo, _ := cmd.Flags().GetString("lmcache-repo")
 	lmcacheCommit, _ := cmd.Flags().GetString("lmcache-commit")
 	lmcacheBranch, _ := cmd.Flags().GetString("lmcache-branch")
-	vllmCommitFlag, _ := cmd.Flags().GetString("vllm-commit")
+	vllmVersionFlag, _ := cmd.Flags().GetString("vllm-version")
 
 	// Create setup state
 	state := &SetupState{
 		LMCacheRepo:   lmcacheRepo,
 		LMCacheCommit: lmcacheCommit,
 		LMCacheBranch: lmcacheBranch,
-		VLLMCommit:    vllmCommitFlag,
+		VLLMVersion:   vllmVersionFlag,
 		SkipHotfixes:  skipHotfixes,
 	}
 
@@ -282,8 +282,32 @@ func installUvPackages(state *SetupState) error {
 	fmt.Println("Installing initial Python packages...")
 
 	basePath := getBasePath()
-	packages := []string{
-		fmt.Sprintf("https://wheels.vllm.ai/%s/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl", state.VLLMCommit),
+
+	// Install torch first to resolve build dependencies
+	fmt.Println("Installing torch (required for other packages)...")
+	cmd := exec.Command("uv", "pip", "install", "--no-cache-dir", "torch")
+	cmd.Dir = basePath
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install torch: %w", err)
+	}
+	fmt.Println("✅ Torch installed successfully")
+
+	// Install vLLM with specified version
+	vllmPackage := fmt.Sprintf("vllm==%s", state.VLLMVersion)
+	fmt.Printf("Installing vLLM version %s...\n", state.VLLMVersion)
+	cmd = exec.Command("uv", "pip", "install", "--no-cache-dir", vllmPackage)
+	cmd.Dir = basePath
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install vLLM version %s: %w", state.VLLMVersion, err)
+	}
+	fmt.Printf("✅ vLLM version %s installed successfully\n", state.VLLMVersion)
+
+	// Install other packages
+	otherPackages := []string{
 		"py-spy",
 		"scalene",
 		"pyinstrument",
@@ -291,13 +315,15 @@ func installUvPackages(state *SetupState) error {
 		"fastsafetensors",
 	}
 
-	for _, pkg := range packages {
+	for _, pkg := range otherPackages {
 		fmt.Printf("Installing %s...\n", pkg)
 		cmd := exec.Command("uv", "pip", "install", "--no-cache-dir", pkg)
 		cmd.Dir = basePath
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 
 		if err := cmd.Run(); err != nil {
-			fmt.Printf("⚠️ Warning: Failed to install %s\n", pkg)
+			fmt.Printf("⚠️ Warning: Failed to install %s: %v\n", pkg, err)
 		} else {
 			fmt.Printf("✅ Installed %s successfully\n", pkg)
 		}
@@ -437,7 +463,7 @@ func installRepositoryDependencies(repoPath string, state *SetupState) error {
 
 	if allExist {
 		fmt.Println("Installing dependencies from requirements files...")
-		args := []string{"pip", "install", "--no-cache-dir"}
+		args := []string{"pip", "install", "--no-cache-dir", "--no-build-isolation"}
 		for _, reqFile := range reqFiles {
 			args = append(args, "-r", reqFile)
 		}
@@ -448,7 +474,7 @@ func installRepositoryDependencies(repoPath string, state *SetupState) error {
 		cmd.Stderr = os.Stderr
 
 		if err := cmd.Run(); err != nil {
-			fmt.Println("⚠️ Warning: Failed to install repository dependencies")
+			fmt.Printf("⚠️ Warning: Failed to install repository dependencies: %v\n", err)
 		} else {
 			fmt.Println("✅ Repository dependencies installed successfully")
 		}
@@ -456,15 +482,15 @@ func installRepositoryDependencies(repoPath string, state *SetupState) error {
 		fmt.Println("⚠️ One or more requirement files not found. Skipping dependency installation.")
 	}
 
-	// Install in editable mode
+	// Install in editable mode with --no-build-isolation to avoid xformers build issues
 	fmt.Println("Installing repository in editable mode...")
-	cmd := exec.Command("uv", "pip", "install", "-e", ".")
+	cmd := exec.Command("uv", "pip", "install", "-e", ".", "--no-build-isolation")
 	cmd.Dir = repoPath
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		fmt.Println("⚠️ Warning: Failed to install repository in editable mode")
+		fmt.Printf("⚠️ Warning: Failed to install repository in editable mode: %v\n", err)
 	} else {
 		fmt.Println("✅ Repository installed in editable mode successfully")
 	}
@@ -474,9 +500,11 @@ func installRepositoryDependencies(repoPath string, state *SetupState) error {
 		fmt.Println("Hot-patching transformers package...")
 		cmd = exec.Command("uv", "pip", "install", "--no-cache-dir", "transformers<4.54.0")
 		cmd.Dir = repoPath
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 
 		if err := cmd.Run(); err != nil {
-			fmt.Println("⚠️ Warning: Failed to hot-patch transformers package")
+			fmt.Printf("⚠️ Warning: Failed to hot-patch transformers package: %v\n", err)
 		} else {
 			fmt.Println("✅ Downgraded transformers explicitly")
 		}
