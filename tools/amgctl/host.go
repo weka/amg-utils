@@ -283,21 +283,10 @@ func installUvPackages(state *SetupState) error {
 
 	basePath := getBasePath()
 
-	// Install torch first to resolve build dependencies
-	fmt.Println("Installing torch (required for other packages)...")
-	cmd := exec.Command("uv", "pip", "install", "--no-cache-dir", "torch")
-	cmd.Dir = basePath
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to install torch: %w", err)
-	}
-	fmt.Println("✅ Torch installed successfully")
-
-	// Install vLLM with specified version
+	// Install vLLM with specified version (torch will be automatically installed as dependency)
 	vllmPackage := fmt.Sprintf("vllm==%s", state.VLLMVersion)
-	fmt.Printf("Installing vLLM version %s...\n", state.VLLMVersion)
-	cmd = exec.Command("uv", "pip", "install", "--no-cache-dir", vllmPackage)
+	fmt.Printf("Installing vLLM version %s (including torch dependencies)...\n", state.VLLMVersion)
+	cmd := exec.Command("uv", "pip", "install", "--no-cache-dir", vllmPackage)
 	cmd.Dir = basePath
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

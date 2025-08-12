@@ -115,8 +115,7 @@ This command performs the following actions:
 1. **Initial Checks**: Verifies that uv and git are installed
 2. **UV Virtual Environment**: Creates `amg_stable` virtual environment with Python 3.12
 3. **Package Installation**: Installs required Python packages including:
-   - torch (installed first to resolve build dependencies)
-   - vLLM version 0.9.2 (configurable via `--vllm-version` flag)
+   - vLLM version 0.9.2 (configurable via `--vllm-version` flag) with torch dependencies
    - py-spy, scalene, pyinstrument, line_profiler, fastsafetensors
 4. **Repository Management**: 
    - Clones `weka-LMCache` repository to `~/amg_stable/LMCache`
