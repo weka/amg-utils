@@ -21,7 +21,7 @@
 CONDA_ENV_NAME="amg_stable"
 REPO_URL="git@github.com:weka/weka-LMCache.git"
 REPO_NAME="LMCache"
-COMMIT_HASH="ccecd5d2bcce7d3e13a79302946f575d00d8c244"
+COMMIT_HASH="c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d"
 BASE_PATH="$HOME/amg-stable"
 
 # VLLM_COMMIT for conditional package installation
