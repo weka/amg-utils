@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,7 +24,7 @@ var hostSetupCmd = &cobra.Command{
 	Long: `Set up the AMG environment by creating UV virtual environments, cloning repositories,
 and installing dependencies. This replicates the functionality of setup_lmcache_stable.sh.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runHostSetup()
+		return runHostSetup(cmd)
 	},
 }
 
@@ -45,10 +46,27 @@ var hostClearCmd = &cobra.Command{
 	},
 }
 
+var hostUpdateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Update LMCache to latest commit when following a branch",
+	Long:  `Update LMCache repository to the latest commit of the current branch. Only works when LMCache was installed following a branch instead of a specific commit.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runHostUpdate()
+	},
+}
+
 func init() {
 	hostCmd.AddCommand(hostSetupCmd)
 	hostCmd.AddCommand(hostStatusCmd)
 	hostCmd.AddCommand(hostClearCmd)
+	hostCmd.AddCommand(hostUpdateCmd)
+
+	// Add flags to hostSetupCmd
+	hostSetupCmd.Flags().Bool("skip-hotfixes", false, "Skip applying hotfixes like downgrading transformers")
+	hostSetupCmd.Flags().String("lmcache-repo", repoURL, "Alternative LMCache repository URL")
+	hostSetupCmd.Flags().String("lmcache-commit", commitHash, "Specific commit hash for LMCache repository")
+	hostSetupCmd.Flags().String("lmcache-branch", "", "Branch to follow for LMCache repository (overrides commit)")
+	hostSetupCmd.Flags().String("vllm-commit", vllmCommit, "Alternative vLLM commit hash")
 }
 
 // Configuration constants
@@ -58,7 +76,17 @@ const (
 	repoName   = "LMCache"
 	commitHash = "c231e2285ee61a0cbc878d51ed2e7236ac7c0b5d"
 	vllmCommit = "b6553be1bc75f046b00046a4ad7576364d03c835"
+	stateFile  = "amg_setup_state.json"
 )
+
+// SetupState tracks the configuration used during setup
+type SetupState struct {
+	LMCacheRepo   string `json:"lmcache_repo"`
+	LMCacheCommit string `json:"lmcache_commit,omitempty"`
+	LMCacheBranch string `json:"lmcache_branch,omitempty"`
+	VLLMCommit    string `json:"vllm_commit"`
+	SkipHotfixes  bool   `json:"skip_hotfixes"`
+}
 
 func getBasePath() string {
 	home, err := os.UserHomeDir()
@@ -76,29 +104,88 @@ func getRepoPath() string {
 	return filepath.Join(getBasePath(), repoName)
 }
 
+func getStateFilePath() string {
+	return filepath.Join(getBasePath(), stateFile)
+}
+
+// saveSetupState saves the setup configuration to a JSON file
+func saveSetupState(state *SetupState) error {
+	stateFilePath := getStateFilePath()
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal setup state: %w", err)
+	}
+
+	if err := os.WriteFile(stateFilePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write setup state file: %w", err)
+	}
+
+	return nil
+}
+
+// loadSetupState loads the setup configuration from the JSON file
+func loadSetupState() (*SetupState, error) {
+	stateFilePath := getStateFilePath()
+	data, err := os.ReadFile(stateFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // No state file exists
+		}
+		return nil, fmt.Errorf("failed to read setup state file: %w", err)
+	}
+
+	var state SetupState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal setup state: %w", err)
+	}
+
+	return &state, nil
+}
+
 // commandExists checks if a command is available in the system PATH
 func commandExists(cmd string) bool {
 	_, err := exec.LookPath(cmd)
 	return err == nil
 }
 
-func runHostSetup() error {
+func runHostSetup(cmd *cobra.Command) error {
 	fmt.Println("🚀 Starting AMG environment setup...")
+
+	// Get flag values
+	skipHotfixes, _ := cmd.Flags().GetBool("skip-hotfixes")
+	lmcacheRepo, _ := cmd.Flags().GetString("lmcache-repo")
+	lmcacheCommit, _ := cmd.Flags().GetString("lmcache-commit")
+	lmcacheBranch, _ := cmd.Flags().GetString("lmcache-branch")
+	vllmCommitFlag, _ := cmd.Flags().GetString("vllm-commit")
+
+	// Create setup state
+	state := &SetupState{
+		LMCacheRepo:   lmcacheRepo,
+		LMCacheCommit: lmcacheCommit,
+		LMCacheBranch: lmcacheBranch,
+		VLLMCommit:    vllmCommitFlag,
+		SkipHotfixes:  skipHotfixes,
+	}
+
+	// If branch is specified, clear commit to indicate we're following a branch
+	if lmcacheBranch != "" {
+		state.LMCacheCommit = ""
+	}
 
 	// Handle cross-platform differences
 	switch runtime.GOOS {
 	case "linux":
-		return runLinuxSetup()
+		return runLinuxSetup(state)
 	case "darwin":
-		return runMacSetup()
+		return runMacSetup(state)
 	case "windows":
-		return runWindowsSetup()
+		return runWindowsSetup(state)
 	default:
 		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
 	}
 }
 
-func runLinuxSetup() error {
+func runLinuxSetup(state *SetupState) error {
 	fmt.Println("🐧 Running Linux setup...")
 
 	// Initial checks
@@ -114,20 +201,25 @@ func runLinuxSetup() error {
 	fmt.Println("✅ uv and Git commands found. Proceeding with setup.")
 
 	// Check and create uv virtual environment
-	if err := setupUvEnvironment(); err != nil {
+	if err := setupUvEnvironment(state); err != nil {
 		return fmt.Errorf("failed to setup uv environment: %w", err)
 	}
 
 	// Setup repository
-	if err := setupRepository(); err != nil {
+	if err := setupRepository(state); err != nil {
 		return fmt.Errorf("failed to setup repository: %w", err)
+	}
+
+	// Save setup state
+	if err := saveSetupState(state); err != nil {
+		fmt.Printf("⚠️ Warning: Failed to save setup state: %v\n", err)
 	}
 
 	fmt.Println("🎉 Setup completed successfully!")
 	return nil
 }
 
-func runMacSetup() error {
+func runMacSetup(state *SetupState) error {
 	fmt.Println("🍎 Mac setup not yet implemented. This is a placeholder.")
 	fmt.Println("The Mac implementation will include:")
 	fmt.Println("  - Homebrew dependency checks")
@@ -136,7 +228,7 @@ func runMacSetup() error {
 	return nil
 }
 
-func runWindowsSetup() error {
+func runWindowsSetup(state *SetupState) error {
 	fmt.Println("🪟 Windows setup not yet implemented. This is a placeholder.")
 	fmt.Println("The Windows implementation will include:")
 	fmt.Println("  - PowerShell/cmd compatibility")
@@ -145,7 +237,7 @@ func runWindowsSetup() error {
 	return nil
 }
 
-func setupUvEnvironment() error {
+func setupUvEnvironment(state *SetupState) error {
 	fmt.Println("\n--- UV Virtual Environment Setup ---")
 
 	basePath := getBasePath()
@@ -176,7 +268,7 @@ func setupUvEnvironment() error {
 		fmt.Printf("✅ UV virtual environment '%s' created successfully.\n", uvEnvName)
 
 		// Install packages for new environment
-		if err := installUvPackages(); err != nil {
+		if err := installUvPackages(state); err != nil {
 			return fmt.Errorf("failed to install uv packages: %w", err)
 		}
 	} else {
@@ -186,16 +278,17 @@ func setupUvEnvironment() error {
 	return nil
 }
 
-func installUvPackages() error {
+func installUvPackages(state *SetupState) error {
 	fmt.Println("Installing initial Python packages...")
 
 	basePath := getBasePath()
 	packages := []string{
-		fmt.Sprintf("https://wheels.vllm.ai/%s/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl", vllmCommit),
+		fmt.Sprintf("https://wheels.vllm.ai/%s/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl", state.VLLMCommit),
 		"py-spy",
 		"scalene",
 		"pyinstrument",
 		"line_profiler",
+		"fastsafetensors",
 	}
 
 	for _, pkg := range packages {
@@ -213,7 +306,7 @@ func installUvPackages() error {
 	return nil
 }
 
-func setupRepository() error {
+func setupRepository(state *SetupState) error {
 	fmt.Println("\n--- GitHub Repository Setup ---")
 
 	basePath := getBasePath()
@@ -227,9 +320,9 @@ func setupRepository() error {
 	// Check if repository exists
 	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
 		fmt.Printf("Repository directory '%s' not found.\n", repoPath)
-		fmt.Printf("Cloning repository '%s' into '%s'...\n", repoURL, repoPath)
+		fmt.Printf("Cloning repository '%s' into '%s'...\n", state.LMCacheRepo, repoPath)
 
-		cmd := exec.Command("git", "clone", repoURL, repoPath)
+		cmd := exec.Command("git", "clone", state.LMCacheRepo, repoPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -253,52 +346,78 @@ func setupRepository() error {
 		fmt.Println("✅ Repository updated.")
 	}
 
-	// Checkout specific commit
-	if err := checkoutCommit(repoPath); err != nil {
-		return fmt.Errorf("failed to checkout commit: %w", err)
+	// Checkout specific commit or branch
+	if err := checkoutCommitOrBranch(repoPath, state); err != nil {
+		return fmt.Errorf("failed to checkout commit/branch: %w", err)
 	}
 
 	// Install repository dependencies
-	if err := installRepositoryDependencies(repoPath); err != nil {
+	if err := installRepositoryDependencies(repoPath, state); err != nil {
 		return fmt.Errorf("failed to install repository dependencies: %w", err)
 	}
 
 	return nil
 }
 
-func checkoutCommit(repoPath string) error {
-	fmt.Println("\n--- Git Commit Checkout ---")
+func checkoutCommitOrBranch(repoPath string, state *SetupState) error {
+	fmt.Println("\n--- Git Checkout ---")
 
-	// Get current commit
-	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "HEAD")
-	output, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to get current commit: %w", err)
-	}
+	if state.LMCacheBranch != "" {
+		// Branch mode - checkout and track the branch
+		fmt.Printf("Checking out branch: %s...\n", state.LMCacheBranch)
 
-	currentCommit := strings.TrimSpace(string(output))
+		// First, fetch all branches
+		cmd := exec.Command("git", "-C", repoPath, "fetch", "origin")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to fetch origin: %w", err)
+		}
 
-	if currentCommit != commitHash {
-		fmt.Printf("Current commit (%s) does not match target commit (%s).\n", currentCommit, commitHash)
-		fmt.Printf("Checking out commit: %s...\n", commitHash)
-
-		cmd := exec.Command("git", "-C", repoPath, "checkout", commitHash)
+		// Checkout the branch
+		cmd = exec.Command("git", "-C", repoPath, "checkout", "-B", state.LMCacheBranch, "origin/"+state.LMCacheBranch)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to checkout commit '%s': %w", commitHash, err)
+			return fmt.Errorf("failed to checkout branch '%s': %w", state.LMCacheBranch, err)
 		}
 
-		fmt.Printf("✅ Successfully checked out commit: %s\n", commitHash)
-	} else {
-		fmt.Printf("✅ Repository is already at the target commit: %s\n", commitHash)
+		fmt.Printf("✅ Successfully checked out and tracking branch: %s\n", state.LMCacheBranch)
+	} else if state.LMCacheCommit != "" {
+		// Commit mode - checkout specific commit
+		fmt.Printf("Checking out commit: %s...\n", state.LMCacheCommit)
+
+		// Get current commit
+		cmd := exec.Command("git", "-C", repoPath, "rev-parse", "HEAD")
+		output, err := cmd.Output()
+		if err != nil {
+			return fmt.Errorf("failed to get current commit: %w", err)
+		}
+
+		currentCommit := strings.TrimSpace(string(output))
+
+		if currentCommit != state.LMCacheCommit {
+			fmt.Printf("Current commit (%s) does not match target commit (%s).\n", currentCommit, state.LMCacheCommit)
+
+			cmd := exec.Command("git", "-C", repoPath, "checkout", state.LMCacheCommit)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("failed to checkout commit '%s': %w", state.LMCacheCommit, err)
+			}
+
+			fmt.Printf("✅ Successfully checked out commit: %s\n", state.LMCacheCommit)
+		} else {
+			fmt.Printf("✅ Repository is already at the target commit: %s\n", state.LMCacheCommit)
+		}
 	}
 
 	return nil
 }
 
-func installRepositoryDependencies(repoPath string) error {
+func installRepositoryDependencies(repoPath string, state *SetupState) error {
 	fmt.Println("\n--- Installing Repository Dependencies ---")
 
 	reqFiles := []string{
@@ -350,17 +469,95 @@ func installRepositoryDependencies(repoPath string) error {
 		fmt.Println("✅ Repository installed in editable mode successfully")
 	}
 
-	// Hot-patch transformers
-	fmt.Println("Hot-patching transformers package...")
-	cmd = exec.Command("uv", "pip", "install", "--no-cache-dir", "transformers<4.54.0")
-	cmd.Dir = repoPath
+	// Apply hotfixes unless skipped
+	if !state.SkipHotfixes {
+		fmt.Println("Hot-patching transformers package...")
+		cmd = exec.Command("uv", "pip", "install", "--no-cache-dir", "transformers<4.54.0")
+		cmd.Dir = repoPath
 
-	if err := cmd.Run(); err != nil {
-		fmt.Println("⚠️ Warning: Failed to hot-patch transformers package")
+		if err := cmd.Run(); err != nil {
+			fmt.Println("⚠️ Warning: Failed to hot-patch transformers package")
+		} else {
+			fmt.Println("✅ Downgraded transformers explicitly")
+		}
 	} else {
-		fmt.Println("✅ Downgraded transformers explicitly")
+		fmt.Println("🚫 Skipping hotfixes (transformers downgrade) as requested")
 	}
 
+	return nil
+}
+
+func runHostUpdate() error {
+	fmt.Println("🔄 Updating LMCache repository...")
+
+	// Load the setup state to check if we're following a branch
+	state, err := loadSetupState()
+	if err != nil {
+		return fmt.Errorf("failed to load setup state: %w", err)
+	}
+
+	if state == nil {
+		return fmt.Errorf("no setup state found. Please run 'amgctl host setup' first")
+	}
+
+	if state.LMCacheBranch == "" {
+		return fmt.Errorf("LMCache is not configured to follow a branch. Update is only available when following a branch instead of a specific commit")
+	}
+
+	repoPath := getRepoPath()
+
+	// Check if repository exists
+	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+		return fmt.Errorf("LMCache repository not found at '%s'. Please run 'amgctl host setup' first", repoPath)
+	}
+
+	fmt.Printf("Updating LMCache repository to latest commit of branch '%s'...\n", state.LMCacheBranch)
+
+	// Fetch latest changes
+	cmd := exec.Command("git", "-C", repoPath, "fetch", "origin")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to fetch latest changes: %w", err)
+	}
+
+	// Get current commit before update
+	cmd = exec.Command("git", "-C", repoPath, "rev-parse", "HEAD")
+	beforeOutput, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get current commit: %w", err)
+	}
+	beforeCommit := strings.TrimSpace(string(beforeOutput))
+
+	// Pull latest changes for the branch
+	cmd = exec.Command("git", "-C", repoPath, "pull", "origin", state.LMCacheBranch)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to pull latest changes: %w", err)
+	}
+
+	// Get current commit after update
+	cmd = exec.Command("git", "-C", repoPath, "rev-parse", "HEAD")
+	afterOutput, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get updated commit: %w", err)
+	}
+	afterCommit := strings.TrimSpace(string(afterOutput))
+
+	if beforeCommit == afterCommit {
+		fmt.Printf("✅ Repository is already up to date at commit: %s\n", afterCommit)
+	} else {
+		fmt.Printf("✅ Repository updated from %s to %s\n", beforeCommit[:8], afterCommit[:8])
+
+		// Reinstall repository dependencies to pick up any changes
+		fmt.Println("Reinstalling repository dependencies...")
+		if err := installRepositoryDependencies(repoPath, state); err != nil {
+			fmt.Printf("⚠️ Warning: Failed to reinstall repository dependencies: %v\n", err)
+		}
+	}
+
+	fmt.Println("🎉 Update completed successfully!")
 	return nil
 }
 
