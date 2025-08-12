@@ -11,8 +11,8 @@ const version = "0.1.2"
 
 var rootCmd = &cobra.Command{
 	Use:   "amgctl",
-	Short: "AMG Scripts Control Tool",
-	Long: `amgctl is a command line interface for managing AMG (AI Model Gateway) environments.
+	Short: "AMG Control CLI",
+	Long: `amgctl is a command line interface for managing Weka AMG (Augmented Memory Grid) environments.
 It provides tools for setting up, managing, and monitoring AMG environments.`,
 	Version: version,
 }
