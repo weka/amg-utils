@@ -385,7 +385,8 @@ func installUvPackages(state *SetupState) error {
 	// Install vLLM with specified version (torch will be automatically installed as dependency)
 	vllmPackage := fmt.Sprintf("vllm==%s", state.VLLMVersion)
 	fmt.Printf("Installing vLLM version %s (including torch dependencies)...\n", state.VLLMVersion)
-	cmd := exec.Command("uv", "pip", "install", "--no-cache-dir", vllmPackage)
+	// Add --torch-backend=auto to auto-detect the optimial pytorch backend for us
+	cmd := exec.Command("uv", "pip", "install", "--no-cache-dir", vllmPackage, "--torch-backend=auto")
 	cmd.Dir = basePath
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
