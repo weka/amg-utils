@@ -1,6 +1,6 @@
 # amgctl - AMG Scripts Control Tool
 
-`amgctl` is a command line interface for managing AMG (AI Model Gateway) environments. It provides tools for setting up, managing, and monitoring AMG environments across Linux, macOS, and Windows platforms.
+`amgctl` is a command line interface for managing Weka AMG (Augmented Memory Grid) environments. It provides tools for setting up, managing, and monitoring AMG environments across Linux, macOS, and Windows platforms.
 
 ## Version
 
