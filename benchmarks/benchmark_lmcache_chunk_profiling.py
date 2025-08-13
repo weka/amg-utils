@@ -244,7 +244,7 @@ def setup_lmcache_config(
             max_local_cpu_size=max_local_cpu_size,
             weka_path=weka_path,
             cufile_buffer_size=cufile_buffer_size,
-            gds_io_threads=gds_io_threads,  # Number of I/O threads
+            extra_config={"gds_io_threads": gds_io_threads},
             remote_url=None,
             remote_serde=None,
             use_layerwise=False,
@@ -820,6 +820,13 @@ def main():
         help="Number of I/O threads for Weka GDS backend"
     )
     
+    parser.add_argument(
+        "--extra-config",
+        type=str,
+        default='{"gds_io_threads": 4}',
+        help="Extra configuration as a JSON string."
+    )
+
     parser.add_argument(
         "--use-local-cpu",
         action="store_true",
