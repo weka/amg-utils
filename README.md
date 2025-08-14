@@ -11,7 +11,7 @@ wget -qO- https://astral.sh/uv/install.sh | sh
 ### Download and Install
 1. Download the utility from the releases:
 ```bash
-wget https://github.com/weka/amg-scripts/releases/download/v0.1.4/amgctl-linux-amd64 -O amgctl
+wget https://github.com/weka/amg-utils/releases/download/v0.1.4/amgctl-linux-amd64 -O amgctl
 ```
 
 2. Make it executable:
@@ -28,3 +28,4 @@ sudo mv amgctl /usr/local/bin/
 ```bash
 amgctl update
 ```
+

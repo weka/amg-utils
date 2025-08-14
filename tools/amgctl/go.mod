@@ -1,4 +1,4 @@
-module github.com/weka/amg-scripts/tools/amgctl
+module github.com/weka/amg-utils/tools/amgctl
 
 go 1.18
 

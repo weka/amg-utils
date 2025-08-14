@@ -21,7 +21,7 @@ import (
 
 const (
 	repoOwner      = "weka"
-	updateRepoName = "amg-scripts"
+	updateRepoName = "amg-utils"
 	githubAPIURL   = "https://api.github.com"
 )
 

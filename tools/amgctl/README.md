@@ -1,4 +1,4 @@
-# amgctl - AMG Scripts Control Tool
+# amgctl - AMG Utils Control Tool
 
 `amgctl` is a command line interface for managing Weka AMG (Augmented Memory Grid) environments. It provides tools for setting up, managing, and monitoring AMG environments across Linux, macOS, and Windows platforms.
 
@@ -39,12 +39,12 @@ Current version: **0.1.2**
 
 1. Clone the repository:
 ```bash
-cd /path/to/amg-scripts/tools/amgctl
+cd /path/to/amg-utils/tools/amgctl
 ```
 
 2. Initialize Go module (if not already done):
 ```bash
-go mod init github.com/weka/amg-scripts/tools/amgctl
+go mod init github.com/weka/amg-utils/tools/amgctl
 ```
 
 3. Install dependencies:
