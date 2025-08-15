@@ -5,10 +5,14 @@ FROM nvidia/cuda:12.9.1-devel-ubuntu24.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 # TODO: Support more architectures besides Hopper
+# TODO: Do we actually need to set that anymore? Check!
 ENV TORCH_CUDA_ARCH_LIST="9.0"
 ENV FORCE_CUDA="1"
 ENV CUDA_HOME=/usr/local/cuda
 ENV NVIDIA_GDS=enabled
+
+# amg-utils version
+ARG AMG_UTILS_VERSION=v0.1.6
 
 # Convenience variables
 ENV PATH=/usr/local/cuda/gds/tools:${PATH}
@@ -34,6 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ibverbs-providers \
     && rm -rf /var/lib/apt/lists/*
 
+# Clone the repository
+RUN git clone --branch ${AMG_UTILS_VERSION} https://github.com/weka/amg-utils.git /root/amg-utils
+
 # Set bash as the default shell
 SHELL ["/bin/bash", "-c"]
 
@@ -46,9 +53,9 @@ ENV PATH="/root/.local/bin:${PATH}"
 # Download and install amgctl
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "x86_64" ]; then \
-        wget https://github.com/weka/amg-utils/releases/download/v0.1.6/amgctl-linux-amd64 -O /usr/local/bin/amgctl; \
+        wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION}/amgctl-linux-amd64 -O /usr/local/bin/amgctl; \
     elif [ "$ARCH" = "aarch64" ]; then \
-        wget https://github.com/weka/amg-utils/releases/download/v0.1.6/amgctl-linux-arm64 -O /usr/local/bin/amgctl; \
+        wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION}/amgctl-linux-arm64 -O /usr/local/bin/amgctl; \
     fi && \
     chmod +x /usr/local/bin/amgctl
 
