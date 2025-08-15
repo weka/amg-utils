@@ -22,7 +22,8 @@ Examples:
   amgctl docker launch microsoft/DialoGPT-medium
   amgctl docker launch --gpu-mem-util 0.8 --port 8080 openai-gpt-3.5-turbo
   amgctl docker launch --gpu-slots "0,1,2,3" meta-llama/Llama-2-7b-chat-hf
-  amgctl docker launch --tensor-parallel-size 2 microsoft/DialoGPT-medium`,
+  amgctl docker launch --tensor-parallel-size 2 microsoft/DialoGPT-medium
+  amgctl docker launch --docker-image "custom/vllm:v1.0" test-model`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		modelIdentifier := args[0]
@@ -144,8 +145,112 @@ Examples:
 			fmt.Println("No InfiniBand devices detected")
 		}
 
+		// Generate and display the Docker command
+		dockerCmd, err := generateDockerCommand(
+			modelIdentifier,
+			cudaVisibleDevices,
+			finalTensorParallelSize,
+			ibFlags,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to generate Docker command: %v", err)
+		}
+
+		fmt.Println("\nGenerated Docker Command:")
+		fmt.Printf("%s\n", strings.Join(dockerCmd, " \\\n  "))
+
 		return nil
 	},
+}
+
+// generateDockerCommand assembles the complete docker run command as a slice of strings
+func generateDockerCommand(modelIdentifier, cudaVisibleDevices string, tensorParallelSize int, ibFlags string) ([]string, error) {
+	var cmd []string
+
+	// Static parts: docker run with basic options
+	cmd = append(cmd, "docker", "run", "-d")
+	cmd = append(cmd, "--gpus", "all")
+	cmd = append(cmd, "--runtime", "nvidia")
+	cmd = append(cmd, "--network", "host")
+	cmd = append(cmd, "--ipc", "host")
+
+	// Add InfiniBand device flags if available
+	if ibFlags != "" {
+		// Split the flags string and add each --device flag
+		deviceFlags := strings.Fields(ibFlags)
+		cmd = append(cmd, deviceFlags...)
+	}
+
+	// Add volume mount for Weka filesystem
+	wekaMount := viper.GetString("weka-mount")
+	cmd = append(cmd, "-v", fmt.Sprintf("%s:/mnt/weka", wekaMount))
+
+	// Add environment variables
+	// CUDA_VISIBLE_DEVICES (if gpu-slots was used)
+	if cudaVisibleDevices != "" && viper.GetString("gpu-slots") != "" {
+		cmd = append(cmd, "-e", fmt.Sprintf("CUDA_VISIBLE_DEVICES=%s", cudaVisibleDevices))
+	}
+
+	// LMCache environment variables
+	lmcachePath := viper.GetString("lmcache-path")
+	lmcacheChunkSize := viper.GetInt("lmcache-chunk-size")
+	lmcacheGdsThreads := viper.GetInt("lmcache-gds-threads")
+
+	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_PATH=%s", lmcachePath))
+	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_CHUNK_SIZE=%d", lmcacheChunkSize))
+	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_GDS_THREADS=%d", lmcacheGdsThreads))
+
+	// Add port mapping for vLLM API server
+	port := viper.GetInt("port")
+	cmd = append(cmd, "-p", fmt.Sprintf("%d:%d", port, port))
+
+	// Docker image name - use version-based default
+	dockerImage := viper.GetString("docker-image")
+	if dockerImage == "" {
+		dockerImage = getDefaultDockerImage()
+		// Auto-pull the image if it doesn't exist locally
+		if err := pullImageIfNeeded(dockerImage); err != nil {
+			return nil, fmt.Errorf("failed to ensure Docker image is available: %w", err)
+		}
+	}
+	cmd = append(cmd, dockerImage)
+
+	// vLLM serve command with all relevant flags
+	vllmCmd := buildVllmCommand(modelIdentifier, tensorParallelSize)
+	cmd = append(cmd, vllmCmd...)
+
+	return cmd, nil
+}
+
+// buildVllmCommand constructs the vllm serve command with all relevant flags
+func buildVllmCommand(modelIdentifier string, tensorParallelSize int) []string {
+	var vllmCmd []string
+
+	vllmCmd = append(vllmCmd, "vllm", "serve", modelIdentifier)
+
+	// Add tensor parallel size
+	vllmCmd = append(vllmCmd, "--tensor-parallel-size", strconv.Itoa(tensorParallelSize))
+
+	// Add GPU memory utilization
+	gpuMemUtil := viper.GetFloat64("gpu-mem-util")
+	vllmCmd = append(vllmCmd, "--gpu-memory-utilization", fmt.Sprintf("%.2f", gpuMemUtil))
+
+	// Add max sequences
+	maxSequences := viper.GetInt("max-sequences")
+	vllmCmd = append(vllmCmd, "--max-num-seqs", strconv.Itoa(maxSequences))
+
+	// Add max model length
+	maxModelLen := viper.GetInt("max-model-len")
+	vllmCmd = append(vllmCmd, "--max-model-len", strconv.Itoa(maxModelLen))
+
+	// Add port
+	port := viper.GetInt("port")
+	vllmCmd = append(vllmCmd, "--port", strconv.Itoa(port))
+
+	// Add host binding
+	vllmCmd = append(vllmCmd, "--host", "0.0.0.0")
+
+	return vllmCmd
 }
 
 func init() {
@@ -162,6 +267,9 @@ func init() {
 	launchCmd.PersistentFlags().String("gpu-slots", "", "Comma-separated list of GPU IDs to use (e.g., '0,1,2,3')")
 	launchCmd.PersistentFlags().Int("tensor-parallel-size", 0, "Number of GPUs to use for tensor parallelism (used when --gpu-slots is not specified)")
 
+	// Add Docker configuration flags
+	launchCmd.PersistentFlags().String("docker-image", "", "Docker image to use for the vLLM container (defaults to sdimitro509/amg:<amgctl-version>, auto-pulled if needed)")
+
 	// Add LMCache configuration flags
 	launchCmd.PersistentFlags().String("lmcache-path", "/mnt/weka/cache", "Path for the cache within the Weka mount")
 	launchCmd.PersistentFlags().Int("lmcache-chunk-size", 256, "LMCache chunk size")
@@ -177,6 +285,7 @@ func init() {
 	_ = viper.BindPFlag("port", launchCmd.PersistentFlags().Lookup("port"))
 	_ = viper.BindPFlag("gpu-slots", launchCmd.PersistentFlags().Lookup("gpu-slots"))
 	_ = viper.BindPFlag("tensor-parallel-size", launchCmd.PersistentFlags().Lookup("tensor-parallel-size"))
+	_ = viper.BindPFlag("docker-image", launchCmd.PersistentFlags().Lookup("docker-image"))
 	_ = viper.BindPFlag("lmcache-path", launchCmd.PersistentFlags().Lookup("lmcache-path"))
 	_ = viper.BindPFlag("lmcache-chunk-size", launchCmd.PersistentFlags().Lookup("lmcache-chunk-size"))
 	_ = viper.BindPFlag("lmcache-gds-threads", launchCmd.PersistentFlags().Lookup("lmcache-gds-threads"))

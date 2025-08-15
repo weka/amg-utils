@@ -70,3 +70,35 @@ func runDockerPull(version, name string) error {
 
 	return nil
 }
+
+// getDefaultDockerImage returns the default Docker image based on amgctl version
+func getDefaultDockerImage() string {
+	return fmt.Sprintf("sdimitro509/amg:%s", version)
+}
+
+// imageExists checks if a Docker image exists locally
+func imageExists(imageName string) bool {
+	cmd := exec.Command("docker", "image", "inspect", imageName)
+	return cmd.Run() == nil
+}
+
+// pullImageIfNeeded automatically pulls the image if it doesn't exist locally
+func pullImageIfNeeded(imageName string) error {
+	if imageExists(imageName) {
+		return nil // Image already exists
+	}
+
+	fmt.Printf("Docker image '%s' not found locally. Pulling it...\n", imageName)
+
+	cmd := exec.Command("docker", "pull", imageName)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
+	}
+
+	fmt.Printf("✅ Successfully pulled image: %s\n", imageName)
+	return nil
+}
