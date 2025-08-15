@@ -11,31 +11,17 @@ Current version: **0.1.6**
 - **Advanced Hardware Discovery**: Automatic detection of NVIDIA GPUs and InfiniBand devices
 - **Container Orchestration**: Launch AMG containers with optimized hardware configurations
 - **Host Environment Management**: Set up, monitor, and clean up AMG environments
-- **Cross-Platform Support**: Works on Linux, macOS, and Windows (with platform-specific implementations)
 - **Self-Update**: Automatically update to the latest version from GitHub releases
 - **Docker Integration**: Manage Docker containers with automatic device flag generation
-- **Automated Setup**: Replicates the functionality of `setup_lmcache_stable.sh` script
 
 ## Prerequisites
 
-### Linux (Fully Implemented)
 - Go 1.23 or later
 - UV (https://docs.astral.sh/uv/getting-started/installation/)
 - Git
 - SSH keys configured for GitHub access
 - NVIDIA drivers (for GPU detection)
 - InfiniBand drivers (for InfiniBand detection)
-
-### macOS (Placeholder Implementation)
-- Go 1.23 or later
-- Homebrew (recommended)
-- UV (https://docs.astral.sh/uv/getting-started/installation/)
-- Git
-
-### Windows (Placeholder Implementation)
-- Go 1.23 or later
-- Git for Windows
-- UV (https://docs.astral.sh/uv/getting-started/installation/)
 
 ## Installation
 
@@ -63,24 +49,14 @@ go build -o amgctl .
 make build
 ```
 
-### Cross-Platform Builds
-
-Build for different platforms:
+### Additional Build Options
 
 ```bash
-# Using Make (recommended)
+# Build for different platforms (if needed)
 make build-all
 
-# Or manually with Go
-# Linux
+# Or build manually for Linux
 GOOS=linux GOARCH=amd64 go build -o amgctl-linux-amd64 .
-
-# macOS
-GOOS=darwin GOARCH=amd64 go build -o amgctl-darwin-amd64 .
-GOOS=darwin GOARCH=arm64 go build -o amgctl-darwin-arm64 .
-
-# Windows
-GOOS=windows GOARCH=amd64 go build -o amgctl-windows-amd64.exe .
 ```
 
 ## Usage
@@ -379,25 +355,13 @@ The tool supports configuration through:
 - **vLLM Version**: `0.9.2` (configurable via `--vllm-version` flag)
 - **Docker Configuration**: See launch command options above
 
-## Platform-Specific Notes
+## Platform Support
 
-### Linux (Fully Functional)
+**Linux (Fully Functional)**
 - All features are implemented and tested
 - Full hardware discovery support
 - Requires standard Linux development tools
 - Uses system UV installation
-
-### macOS (Limited Support)
-- Basic structure implemented
-- Hardware discovery may have limitations
-- Platform-specific optimizations planned
-- Homebrew integration planned
-
-### Windows (Placeholder)
-- Basic structure implemented
-- Hardware discovery not implemented
-- PowerShell/cmd compatibility planned
-- Windows-specific path handling planned
 
 ## Error Handling
 
@@ -405,7 +369,6 @@ The tool provides comprehensive error handling:
 - Command existence checks before execution
 - Graceful failure with informative error messages
 - Warning messages for non-critical failures (e.g., missing hardware)
-- Cross-platform error handling
 - Hardware detection fallbacks
 
 ## Development
