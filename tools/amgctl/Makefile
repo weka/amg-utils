@@ -5,7 +5,7 @@ MAIN_PACKAGE=.
 # Default build
 .PHONY: build
 build:
-	go build -o $(BINARY_NAME) $(MAIN_PACKAGE)
+	CGO_ENABLED=1 go build -o $(BINARY_NAME) $(MAIN_PACKAGE)
 
 # Clean build artifacts
 .PHONY: clean
@@ -19,22 +19,17 @@ deps:
 	go mod tidy
 	go mod download
 
-# Build for all platforms
+# Build for all supported platforms (Linux only)
 .PHONY: build-all
 build-all: clean
-	GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME)-linux-amd64 $(MAIN_PACKAGE)
-	GOOS=darwin GOARCH=amd64 go build -o $(BINARY_NAME)-darwin-amd64 $(MAIN_PACKAGE)
-	GOOS=darwin GOARCH=arm64 go build -o $(BINARY_NAME)-darwin-arm64 $(MAIN_PACKAGE)
-	GOOS=windows GOARCH=amd64 go build -o $(BINARY_NAME)-windows-amd64.exe $(MAIN_PACKAGE)
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME)-linux-amd64 $(MAIN_PACKAGE)
+	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -o $(BINARY_NAME)-linux-arm64 $(MAIN_PACKAGE)
 
 # Build release binaries with optimizations (for GitHub releases)
 .PHONY: build-release
 build-release: clean
-	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o $(BINARY_NAME)-linux-amd64 $(MAIN_PACKAGE)
-	GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o $(BINARY_NAME)-linux-arm64 $(MAIN_PACKAGE)
-	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o $(BINARY_NAME)-darwin-amd64 $(MAIN_PACKAGE)
-	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o $(BINARY_NAME)-windows-amd64.exe $(MAIN_PACKAGE)
-	@echo "Note: darwin/arm64 build skipped due to Go version compatibility"
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o $(BINARY_NAME)-linux-amd64 $(MAIN_PACKAGE)
+	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o $(BINARY_NAME)-linux-arm64 $(MAIN_PACKAGE)
 	sha256sum $(BINARY_NAME)-* > checksums.txt
 
 # Run tests
