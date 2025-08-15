@@ -81,10 +81,9 @@ jobs:
             
             ### Installation
             
-            Download the appropriate binary for your Linux platform:
+            Download the binary for your Linux platform:
             
             - **Linux (x64)**: `amgctl-linux-amd64`
-            - **Linux (ARM64)**: `amgctl-linux-arm64`
             
             ### Self-Update
             
