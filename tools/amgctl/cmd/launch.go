@@ -28,7 +28,8 @@ Examples:
   amgctl docker launch --docker-image "custom/vllm:v1.0" test-model
   amgctl docker launch --dry-run meta-llama/Llama-2-7b-chat-hf
   amgctl docker launch --no-enable-prefix-caching --lmcache-local-cpu my-model
-  amgctl docker launch --max-num-batched-tokens 32768 --max-model-len 8192 my-model`,
+  amgctl docker launch --max-num-batched-tokens 32768 --max-model-len 8192 my-model
+  amgctl docker launch --hf-home "/custom/hf/cache" my-model`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		modelIdentifier := args[0]
@@ -95,6 +96,7 @@ Examples:
 		fmt.Printf("  LMCache cuFile Buffer Size: %s\n", viper.GetString("lmcache-cufile-buffer-size"))
 		fmt.Printf("  LMCache Local CPU: %t\n", viper.GetBool("lmcache-local-cpu"))
 		fmt.Printf("  LMCache Save Decode Cache: %t\n", viper.GetBool("lmcache-save-decode-cache"))
+		fmt.Printf("  Hugging Face Cache: %s\n", viper.GetString("hf-home"))
 		fmt.Printf("  vLLM Prefix Caching Disabled: %t\n", viper.GetBool("no-enable-prefix-caching"))
 
 		// Display GPU allocation settings
@@ -188,6 +190,10 @@ func generateDockerCommand(modelIdentifier, cudaVisibleDevices string, tensorPar
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_CUFILE_BUFFER_SIZE=%s", lmcacheCufileBufferSize))
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_LOCAL_CPU=%t", lmcacheLocalCpu))
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_SAVE_DECODE_CACHE=%t", lmcacheSaveDecodeCache))
+
+	// Hugging Face environment variables
+	hfHome := viper.GetString("hf-home")
+	cmd = append(cmd, "-e", fmt.Sprintf("HF_HOME=%s", hfHome))
 
 	// Add port mapping for vLLM API server
 	port := viper.GetInt("port")
@@ -311,6 +317,9 @@ func init() {
 	launchCmd.PersistentFlags().Bool("lmcache-local-cpu", false, "Enable LMCache local CPU processing")
 	launchCmd.PersistentFlags().Bool("lmcache-save-decode-cache", true, "Enable LMCache decode cache saving")
 
+	// Add Hugging Face configuration flags
+	launchCmd.PersistentFlags().String("hf-home", "/mnt/weka/hf_cache", "Hugging Face cache directory path")
+
 	// Add vLLM configuration flags
 	launchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
 
@@ -333,5 +342,6 @@ func init() {
 	_ = viper.BindPFlag("lmcache-cufile-buffer-size", launchCmd.PersistentFlags().Lookup("lmcache-cufile-buffer-size"))
 	_ = viper.BindPFlag("lmcache-local-cpu", launchCmd.PersistentFlags().Lookup("lmcache-local-cpu"))
 	_ = viper.BindPFlag("lmcache-save-decode-cache", launchCmd.PersistentFlags().Lookup("lmcache-save-decode-cache"))
+	_ = viper.BindPFlag("hf-home", launchCmd.PersistentFlags().Lookup("hf-home"))
 	_ = viper.BindPFlag("no-enable-prefix-caching", launchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
 }
