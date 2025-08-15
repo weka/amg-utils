@@ -9,13 +9,19 @@ import (
 	"github.com/prometheus/procfs/sysfs"
 )
 
-// getInfinibandDeviceFlags discovers all InfiniBand devices on the host and generates
-// Docker device flags for each device and port. It also includes the rdma_cm device.
-// Returns a string containing all the Docker device flags.
+// getInfinibandDeviceFlags discovers InfiniBand devices on the host and generates
+// Docker device flags for essential devices only (rdma_cm and uverbs devices).
+// Returns a string containing the Docker device flags.
 func GetInfinibandDeviceFlags() (string, error) {
 	var deviceFlags []string
 
-	// Discover InfiniBand devices using sysfs
+	// Always add the rdma_cm device if it exists
+	rdmaCmDevice := "/dev/infiniband/rdma_cm"
+	if deviceExists(rdmaCmDevice) {
+		deviceFlags = append(deviceFlags, fmt.Sprintf("--device=%s", rdmaCmDevice))
+	}
+
+	// Discover InfiniBand devices using sysfs to get uverbs devices
 	fs, err := sysfs.NewFS("/sys")
 	if err != nil {
 		return "", fmt.Errorf("failed to initialize sysfs: %v", err)
@@ -26,50 +32,25 @@ func GetInfinibandDeviceFlags() (string, error) {
 		return "", fmt.Errorf("failed to read InfiniBand class information: %v", err)
 	}
 
-	// Generate device flags for each InfiniBand device and its ports
-	for deviceName, device := range ibClass {
+	// Generate device flags for uverbs devices only
+	for deviceName := range ibClass {
 		// Add the main device (uverbs)
 		uverbsDevice := fmt.Sprintf("/dev/infiniband/uverbs%s", strings.TrimPrefix(deviceName, "mlx"))
 		if deviceExists(uverbsDevice) {
 			deviceFlags = append(deviceFlags, fmt.Sprintf("--device=%s", uverbsDevice))
 		}
-
-		// Add device flags for each port
-		for portNum := range device.Ports {
-			// Add the port-specific device if it exists
-			portDevice := fmt.Sprintf("/dev/infiniband/%s_%d", deviceName, portNum)
-			if deviceExists(portDevice) {
-				deviceFlags = append(deviceFlags, fmt.Sprintf("--device=%s", portDevice))
-			}
-		}
-
-		// Add issm device if it exists
-		issmDevice := fmt.Sprintf("/dev/infiniband/issm%s", strings.TrimPrefix(deviceName, "mlx"))
-		if deviceExists(issmDevice) {
-			deviceFlags = append(deviceFlags, fmt.Sprintf("--device=%s", issmDevice))
-		}
-
-		// Add umad devices for each port
-		for portNum := range device.Ports {
-			umadDevice := fmt.Sprintf("/dev/infiniband/umad%s_%d", strings.TrimPrefix(deviceName, "mlx"), portNum)
-			if deviceExists(umadDevice) {
-				deviceFlags = append(deviceFlags, fmt.Sprintf("--device=%s", umadDevice))
-			}
-		}
 	}
 
-	// Add the rdma_cm device
-	rdmaCmDevice := "/dev/infiniband/rdma_cm"
-	if deviceExists(rdmaCmDevice) {
-		deviceFlags = append(deviceFlags, fmt.Sprintf("--device=%s", rdmaCmDevice))
-	}
-
-	// Discover all available device files by scanning the directory
+	// Also scan for any uverbs devices that might not be detected via sysfs
 	if deviceDirs, err := os.ReadDir("/dev/infiniband"); err == nil {
 		for _, entry := range deviceDirs {
-			devicePath := fmt.Sprintf("/dev/infiniband/%s", entry.Name())
-			if !containsDevice(deviceFlags, devicePath) {
-				deviceFlags = append(deviceFlags, fmt.Sprintf("--device=%s", devicePath))
+			deviceName := entry.Name()
+			// Only include uverbs devices and rdma_cm
+			if strings.HasPrefix(deviceName, "uverbs") || deviceName == "rdma_cm" {
+				devicePath := fmt.Sprintf("/dev/infiniband/%s", deviceName)
+				if !containsDevice(deviceFlags, devicePath) {
+					deviceFlags = append(deviceFlags, fmt.Sprintf("--device=%s", devicePath))
+				}
 			}
 		}
 	}

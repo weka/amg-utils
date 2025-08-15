@@ -30,7 +30,6 @@ Examples:
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		modelIdentifier := args[0]
-		fmt.Printf("amgctl docker launch called with model: %s\n", modelIdentifier)
 
 		// Handle GPU allocation logic
 		gpuSlots := viper.GetString("gpu-slots")
