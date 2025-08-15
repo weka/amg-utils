@@ -263,7 +263,7 @@ func init() {
 
 	// Add persistent flags for launch configuration
 	launchCmd.PersistentFlags().String("weka-mount", "/mnt/weka", "The Weka filesystem mount point on the host")
-	launchCmd.PersistentFlags().Float64("gpu-mem-util", 0.9, "GPU memory utilization for vLLM")
+	launchCmd.PersistentFlags().Float64("gpu-mem-util", 0.8, "GPU memory utilization for vLLM")
 	launchCmd.PersistentFlags().Int("max-sequences", 256, "The maximum number of sequences")
 	launchCmd.PersistentFlags().Int("max-model-len", 16384, "The maximum model length")
 	launchCmd.PersistentFlags().Int("port", 8000, "The port for the vLLM API server")
