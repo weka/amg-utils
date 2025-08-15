@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -23,7 +25,8 @@ Examples:
   amgctl docker launch --gpu-mem-util 0.8 --port 8080 openai-gpt-3.5-turbo
   amgctl docker launch --gpu-slots "0,1,2,3" meta-llama/Llama-2-7b-chat-hf
   amgctl docker launch --tensor-parallel-size 2 microsoft/DialoGPT-medium
-  amgctl docker launch --docker-image "custom/vllm:v1.0" test-model`,
+  amgctl docker launch --docker-image "custom/vllm:v1.0" test-model
+  amgctl docker launch --dry-run meta-llama/Llama-2-7b-chat-hf`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		modelIdentifier := args[0]
@@ -145,7 +148,7 @@ Examples:
 			fmt.Println("No InfiniBand devices detected")
 		}
 
-		// Generate and display the Docker command
+		// Generate the Docker command
 		dockerCmd, err := generateDockerCommand(
 			modelIdentifier,
 			cudaVisibleDevices,
@@ -156,10 +159,21 @@ Examples:
 			return fmt.Errorf("failed to generate Docker command: %v", err)
 		}
 
-		fmt.Println("\nGenerated Docker Command:")
-		fmt.Printf("%s\n", strings.Join(dockerCmd, " \\\n  "))
+		// Check if dry-run mode is enabled
+		dryRun := viper.GetBool("dry-run")
+		
+		if dryRun {
+			// Dry-run mode: display the command and exit
+			fmt.Println("\n🔍 Dry Run Mode - Docker Command Preview:")
+			fmt.Println("=====================================")
+			fmt.Printf("%s\n", strings.Join(dockerCmd, " \\\n  "))
+			fmt.Println("\n💡 To execute this command, run without --dry-run flag")
+			return nil
+		}
 
-		return nil
+		// Normal mode: execute the command
+		fmt.Println("\n🚀 Executing Docker Command...")
+		return executeDockerCommand(dockerCmd)
 	},
 }
 
@@ -253,6 +267,35 @@ func buildVllmCommand(modelIdentifier string, tensorParallelSize int) []string {
 	return vllmCmd
 }
 
+// executeDockerCommand executes the Docker command with real-time output streaming
+func executeDockerCommand(dockerCmd []string) error {
+	if len(dockerCmd) == 0 {
+		return fmt.Errorf("docker command is empty")
+	}
+
+	// Create the command
+	cmd := exec.Command(dockerCmd[0], dockerCmd[1:]...)
+	
+	// Stream stdout and stderr to the user's terminal in real-time
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	
+	// Set up proper signal handling for the child process
+	cmd.Stdin = os.Stdin
+
+	// Display the command being executed (abbreviated version)
+	fmt.Printf("Running: %s %s...\n", dockerCmd[0], strings.Join(dockerCmd[1:3], " "))
+	
+	// Execute the command
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("docker command failed: %w", err)
+	}
+
+	fmt.Println("\n✅ Docker container launched successfully!")
+	return nil
+}
+
 func init() {
 	dockerCmd.AddCommand(launchCmd)
 
@@ -269,6 +312,7 @@ func init() {
 
 	// Add Docker configuration flags
 	launchCmd.PersistentFlags().String("docker-image", "", "Docker image to use for the vLLM container (defaults to sdimitro509/amg:<amgctl-version>, auto-pulled if needed)")
+	launchCmd.PersistentFlags().Bool("dry-run", false, "Print the Docker command that would be executed without actually running it")
 
 	// Add LMCache configuration flags
 	launchCmd.PersistentFlags().String("lmcache-path", "/mnt/weka/cache", "Path for the cache within the Weka mount")
@@ -286,6 +330,7 @@ func init() {
 	_ = viper.BindPFlag("gpu-slots", launchCmd.PersistentFlags().Lookup("gpu-slots"))
 	_ = viper.BindPFlag("tensor-parallel-size", launchCmd.PersistentFlags().Lookup("tensor-parallel-size"))
 	_ = viper.BindPFlag("docker-image", launchCmd.PersistentFlags().Lookup("docker-image"))
+	_ = viper.BindPFlag("dry-run", launchCmd.PersistentFlags().Lookup("dry-run"))
 	_ = viper.BindPFlag("lmcache-path", launchCmd.PersistentFlags().Lookup("lmcache-path"))
 	_ = viper.BindPFlag("lmcache-chunk-size", launchCmd.PersistentFlags().Lookup("lmcache-chunk-size"))
 	_ = viper.BindPFlag("lmcache-gds-threads", launchCmd.PersistentFlags().Lookup("lmcache-gds-threads"))
