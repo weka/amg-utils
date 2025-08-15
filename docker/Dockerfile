@@ -51,12 +51,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
 
 # Download and install amgctl
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then \
-        wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION}/amgctl-linux-amd64 -O /usr/local/bin/amgctl; \
-    elif [ "$ARCH" = "aarch64" ]; then \
-        wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION}/amgctl-linux-arm64 -O /usr/local/bin/amgctl; \
-    fi && \
+RUN wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION}/amgctl-linux-amd64 -O /usr/local/bin/amgctl && \
     chmod +x /usr/local/bin/amgctl
 
 # Setup host with amgctl (use upstream LMCache and VLLM)
