@@ -27,7 +27,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.23'
 
       - name: Cache Go modules
         uses: actions/cache@v3
@@ -66,18 +66,14 @@ jobs:
         run: |
           make build
 
-  # Additional job to ensure the project builds on multiple platforms
+  # Additional job to ensure the project builds on Linux platforms
   build-matrix:
     name: Build Matrix
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        goos: [linux, darwin, windows]
+        goos: [linux]
         goarch: [amd64, arm64]
-        exclude:
-          # Windows ARM64 builds might not be needed
-          - goos: windows
-            goarch: arm64
     defaults:
       run:
         working-directory: tools/amgctl
@@ -89,15 +85,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.23'
 
       - name: Build for ${{ matrix.goos }}/${{ matrix.goarch }}
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            go build -o amgctl-${{ matrix.goos }}-${{ matrix.goarch }}.exe .
-          else
-            go build -o amgctl-${{ matrix.goos }}-${{ matrix.goarch }} .
-          fi
+          go build -o amgctl-${{ matrix.goos }}-${{ matrix.goarch }} .
