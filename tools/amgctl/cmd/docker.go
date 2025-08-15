@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var dockerCmd = &cobra.Command{
@@ -19,8 +20,8 @@ var dockerPullCmd = &cobra.Command{
 	Short: "Pull Docker image",
 	Long:  `Pull the AMG Docker image from the registry.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		version, _ := cmd.Flags().GetString("version")
-		name, _ := cmd.Flags().GetString("name")
+		version := viper.GetString("version")
+		name := viper.GetString("name")
 		return runDockerPull(version, name)
 	},
 }
@@ -29,6 +30,8 @@ func init() {
 	dockerCmd.AddCommand(dockerPullCmd)
 	dockerPullCmd.Flags().StringP("version", "v", "0.1.0", "Version of the AMG image to pull")
 	dockerPullCmd.Flags().StringP("name", "n", "", "Local name to tag the pulled image (optional)")
+	cobra.CheckErr(viper.BindPFlag("version", dockerPullCmd.Flags().Lookup("version")))
+	cobra.CheckErr(viper.BindPFlag("name", dockerPullCmd.Flags().Lookup("name")))
 }
 
 func runDockerPull(version, name string) error {

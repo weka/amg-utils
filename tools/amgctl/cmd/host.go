@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"bufio"
@@ -16,7 +16,7 @@ import (
 var hostCmd = &cobra.Command{
 	Use:   "host",
 	Short: "Host environment management commands",
-	Long:  `Manage the host environment setup, status, and cleanup for AMG.`,
+	Long:  `Manage and monitor the host environment for AMG.`,
 }
 
 var hostSetupCmd = &cobra.Command{
@@ -32,9 +32,10 @@ and installing dependencies. This replicates the functionality of setup_lmcache_
 var hostStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show AMG environment status",
-	Long:  `Display the current status of the AMG environment including UV virtual environments and repositories.`,
+	Long:  `Check the status of the host environment, including required software.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runHostStatus(cmd)
+		verbose, _ := cmd.Flags().GetBool("verbose")
+		return runHostStatus(verbose)
 	},
 }
 
@@ -70,7 +71,7 @@ func init() {
 	hostSetupCmd.Flags().String("vllm-version", vllmVersion, "vLLM version to install (e.g., 0.9.2, 0.10.0)")
 
 	// Add flags to hostStatusCmd
-	hostStatusCmd.Flags().BoolP("verbose", "v", false, "Show detailed information including installed packages and system resources")
+	hostStatusCmd.Flags().BoolP("verbose", "v", false, "Enable verbose output")
 
 	// Add flags to hostClearCmd
 	hostClearCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt and proceed with deletion")
@@ -683,9 +684,7 @@ func runHostUpdate() error {
 	return nil
 }
 
-func runHostStatus(cmd *cobra.Command) error {
-	verbose, _ := cmd.Flags().GetBool("verbose")
-
+func runHostStatus(verbose bool) error {
 	fmt.Println("📊 AMG Environment Status")
 	fmt.Println("=" + strings.Repeat("=", 50))
 
@@ -807,143 +806,6 @@ func runWindowsClear() error {
 	fmt.Println("  - Windows-specific cleanup")
 	fmt.Println("  - Registry cleanup if needed")
 	fmt.Println("  - UV virtual environment cleanup")
-	return nil
-}
-
-// showUvEnvironmentStatus displays the status of the UV virtual environment
-func showUvEnvironmentStatus() error {
-	fmt.Println("🐍 UV Virtual Environment Status:")
-	fmt.Println("-" + strings.Repeat("-", 30))
-
-	basePath := getBasePath()
-	uvEnvPath := getUvEnvPath()
-
-	// Check if base directory exists
-	if _, err := os.Stat(basePath); os.IsNotExist(err) {
-		fmt.Println("❌ AMG environment directory not found")
-		fmt.Printf("   Expected location: %s\n", basePath)
-		fmt.Println("   Run 'amgctl host setup' to create the environment")
-		return nil
-	}
-
-	fmt.Printf("✅ Base directory: %s\n", basePath)
-
-	// Check if UV virtual environment exists
-	if _, err := os.Stat(uvEnvPath); os.IsNotExist(err) {
-		fmt.Println("❌ UV virtual environment not found")
-		fmt.Printf("   Expected location: %s\n", uvEnvPath)
-		fmt.Println("   Run 'amgctl host setup' to create the environment")
-		return nil
-	}
-
-	fmt.Printf("✅ UV virtual environment: %s\n", uvEnvPath)
-
-	// Check if UV command is available
-	if !commandExists("uv") {
-		fmt.Println("❌ UV command not found in PATH")
-		return nil
-	}
-
-	// Check Python version in the virtual environment
-	cmd := exec.Command("uv", "run", "python", "--version")
-	cmd.Dir = basePath
-	output, err := cmd.Output()
-	if err != nil {
-		fmt.Printf("⚠️  Could not determine Python version: %v\n", err)
-	} else {
-		pythonVersion := strings.TrimSpace(string(output))
-		fmt.Printf("✅ Python version: %s\n", pythonVersion)
-	}
-
-	// Check if environment is currently active
-	virtualEnv := os.Getenv("VIRTUAL_ENV")
-	if virtualEnv == uvEnvPath {
-		fmt.Println("✅ Virtual environment is currently ACTIVE")
-	} else if virtualEnv != "" {
-		fmt.Printf("⚠️  Different virtual environment is active: %s\n", virtualEnv)
-	} else {
-		fmt.Println("ℹ️  Virtual environment is not currently active")
-		fmt.Println("   To activate: source " + filepath.Join(uvEnvPath, "bin", "activate"))
-	}
-
-	return nil
-}
-
-// showRepositoryStatus displays the status of the LMCache repository
-func showRepositoryStatus() error {
-	fmt.Println("📁 Repository Status:")
-	fmt.Println("-" + strings.Repeat("-", 20))
-
-	repoPath := getRepoPath()
-
-	// Check if repository exists
-	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
-		fmt.Println("❌ LMCache repository not found")
-		fmt.Printf("   Expected location: %s\n", repoPath)
-		fmt.Println("   Run 'amgctl host setup' to clone the repository")
-		return nil
-	}
-
-	fmt.Printf("✅ Repository location: %s\n", repoPath)
-
-	// Load setup state to see configuration
-	state, err := loadSetupState()
-	if err != nil {
-		fmt.Printf("⚠️  Could not load setup state: %v\n", err)
-	} else if state != nil {
-		fmt.Printf("📋 Repository URL: %s\n", state.LMCacheRepo)
-		if state.LMCacheBranch != "" {
-			fmt.Printf("🌿 Following branch: %s\n", state.LMCacheBranch)
-		} else if state.LMCacheCommit != "" {
-			fmt.Printf("📌 Pinned to commit: %s\n", state.LMCacheCommit)
-		}
-	}
-
-	// Get current commit
-	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "HEAD")
-	output, err := cmd.Output()
-	if err != nil {
-		fmt.Printf("⚠️  Could not get current commit: %v\n", err)
-	} else {
-		currentCommit := strings.TrimSpace(string(output))
-		fmt.Printf("📍 Current commit: %s\n", currentCommit[:8]+"...")
-	}
-
-	// Get current branch/status
-	cmd = exec.Command("git", "-C", repoPath, "branch", "--show-current")
-	output, err = cmd.Output()
-	if err == nil {
-		currentBranch := strings.TrimSpace(string(output))
-		if currentBranch != "" {
-			fmt.Printf("🌿 Current branch: %s\n", currentBranch)
-		} else {
-			fmt.Println("📍 In detached HEAD state")
-		}
-	}
-
-	// Check for uncommitted changes
-	cmd = exec.Command("git", "-C", repoPath, "status", "--porcelain")
-	output, err = cmd.Output()
-	if err != nil {
-		fmt.Printf("⚠️  Could not check git status: %v\n", err)
-	} else {
-		changes := strings.TrimSpace(string(output))
-		if changes == "" {
-			fmt.Println("✅ Working directory is clean")
-		} else {
-			fmt.Println("⚠️  Uncommitted changes detected:")
-			lines := strings.Split(changes, "\n")
-			for i, line := range lines {
-				if i < 5 { // Show first 5 changes
-					fmt.Printf("   %s\n", line)
-				} else {
-					fmt.Printf("   ... and %d more changes\n", len(lines)-5)
-					break
-				}
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -1142,4 +1004,141 @@ func showGPUInfo() {
 	if gpuCount == 0 {
 		fmt.Println("ℹ️  No GPU devices found")
 	}
+}
+
+// showUvEnvironmentStatus displays the status of the UV virtual environment
+func showUvEnvironmentStatus() error {
+	fmt.Println("🐍 UV Virtual Environment Status:")
+	fmt.Println("-" + strings.Repeat("-", 30))
+
+	basePath := getBasePath()
+	uvEnvPath := getUvEnvPath()
+
+	// Check if base directory exists
+	if _, err := os.Stat(basePath); os.IsNotExist(err) {
+		fmt.Println("❌ AMG environment directory not found")
+		fmt.Printf("   Expected location: %s\n", basePath)
+		fmt.Println("   Run 'amgctl host setup' to create the environment")
+		return nil
+	}
+
+	fmt.Printf("✅ Base directory: %s\n", basePath)
+
+	// Check if UV virtual environment exists
+	if _, err := os.Stat(uvEnvPath); os.IsNotExist(err) {
+		fmt.Println("❌ UV virtual environment not found")
+		fmt.Printf("   Expected location: %s\n", uvEnvPath)
+		fmt.Println("   Run 'amgctl host setup' to create the environment")
+		return nil
+	}
+
+	fmt.Printf("✅ UV virtual environment: %s\n", uvEnvPath)
+
+	// Check if UV command is available
+	if !commandExists("uv") {
+		fmt.Println("❌ UV command not found in PATH")
+		return nil
+	}
+
+	// Check Python version in the virtual environment
+	cmd := exec.Command("uv", "run", "python", "--version")
+	cmd.Dir = basePath
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("⚠️  Could not determine Python version: %v\n", err)
+	} else {
+		pythonVersion := strings.TrimSpace(string(output))
+		fmt.Printf("✅ Python version: %s\n", pythonVersion)
+	}
+
+	// Check if environment is currently active
+	virtualEnv := os.Getenv("VIRTUAL_ENV")
+	if virtualEnv == uvEnvPath {
+		fmt.Println("✅ Virtual environment is currently ACTIVE")
+	} else if virtualEnv != "" {
+		fmt.Printf("⚠️  Different virtual environment is active: %s\n", virtualEnv)
+	} else {
+		fmt.Println("ℹ️  Virtual environment is not currently active")
+		fmt.Println("   To activate: source " + filepath.Join(uvEnvPath, "bin", "activate"))
+	}
+
+	return nil
+}
+
+// showRepositoryStatus displays the status of the LMCache repository
+func showRepositoryStatus() error {
+	fmt.Println("📁 Repository Status:")
+	fmt.Println("-" + strings.Repeat("-", 20))
+
+	repoPath := getRepoPath()
+
+	// Check if repository exists
+	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+		fmt.Println("❌ LMCache repository not found")
+		fmt.Printf("   Expected location: %s\n", repoPath)
+		fmt.Println("   Run 'amgctl host setup' to clone the repository")
+		return nil
+	}
+
+	fmt.Printf("✅ Repository location: %s\n", repoPath)
+
+	// Load setup state to see configuration
+	state, err := loadSetupState()
+	if err != nil {
+		fmt.Printf("⚠️  Could not load setup state: %v\n", err)
+	} else if state != nil {
+		fmt.Printf("📋 Repository URL: %s\n", state.LMCacheRepo)
+		if state.LMCacheBranch != "" {
+			fmt.Printf("🌿 Following branch: %s\n", state.LMCacheBranch)
+		} else if state.LMCacheCommit != "" {
+			fmt.Printf("📌 Pinned to commit: %s\n", state.LMCacheCommit)
+		}
+	}
+
+	// Get current commit
+	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("⚠️  Could not get current commit: %v\n", err)
+	} else {
+		currentCommit := strings.TrimSpace(string(output))
+		fmt.Printf("📍 Current commit: %s\n", currentCommit[:8]+"...")
+	}
+
+	// Get current branch/status
+	cmd = exec.Command("git", "-C", repoPath, "branch", "--show-current")
+	output, err = cmd.Output()
+	if err == nil {
+		currentBranch := strings.TrimSpace(string(output))
+		if currentBranch != "" {
+			fmt.Printf("🌿 Current branch: %s\n", currentBranch)
+		} else {
+			fmt.Println("📍 In detached HEAD state")
+		}
+	}
+
+	// Check for uncommitted changes
+	cmd = exec.Command("git", "-C", repoPath, "status", "--porcelain")
+	output, err = cmd.Output()
+	if err != nil {
+		fmt.Printf("⚠️  Could not check git status: %v\n", err)
+	} else {
+		changes := strings.TrimSpace(string(output))
+		if changes == "" {
+			fmt.Println("✅ Working directory is clean")
+		} else {
+			fmt.Println("⚠️  Uncommitted changes detected:")
+			lines := strings.Split(changes, "\n")
+			for i, line := range lines {
+				if i < 5 { // Show first 5 changes
+					fmt.Printf("   %s\n", line)
+				} else {
+					fmt.Printf("   ... and %d more changes\n", len(lines)-5)
+					break
+				}
+			}
+		}
+	}
+
+	return nil
 }
