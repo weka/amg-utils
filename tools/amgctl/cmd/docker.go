@@ -28,7 +28,7 @@ var dockerPullCmd = &cobra.Command{
 
 func init() {
 	dockerCmd.AddCommand(dockerPullCmd)
-	dockerPullCmd.Flags().StringP("version", "v", "0.1.0", "Version of the AMG image to pull")
+	dockerPullCmd.Flags().StringP("version", "v", version, "Version of the AMG image to pull")
 	dockerPullCmd.Flags().StringP("name", "n", "", "Local name to tag the pulled image (optional)")
 	cobra.CheckErr(viper.BindPFlag("version", dockerPullCmd.Flags().Lookup("version")))
 	cobra.CheckErr(viper.BindPFlag("name", dockerPullCmd.Flags().Lookup("name")))
