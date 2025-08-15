@@ -27,7 +27,8 @@ Examples:
   amgctl docker launch --tensor-parallel-size 2 microsoft/DialoGPT-medium
   amgctl docker launch --docker-image "custom/vllm:v1.0" test-model
   amgctl docker launch --dry-run meta-llama/Llama-2-7b-chat-hf
-  amgctl docker launch --no-enable-prefix-caching --lmcache-local-cpu my-model`,
+  amgctl docker launch --no-enable-prefix-caching --lmcache-local-cpu my-model
+  amgctl docker launch --max-num-batched-tokens 32768 --max-model-len 8192 my-model`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		modelIdentifier := args[0]
@@ -86,6 +87,7 @@ Examples:
 		fmt.Printf("  GPU Memory Utilization: %.2f\n", viper.GetFloat64("gpu-mem-util"))
 		fmt.Printf("  Max Sequences: %d\n", viper.GetInt("max-sequences"))
 		fmt.Printf("  Max Model Length: %d\n", viper.GetInt("max-model-len"))
+		fmt.Printf("  Max Batched Tokens: %d\n", viper.GetInt("max-num-batched-tokens"))
 		fmt.Printf("  Port: %d\n", viper.GetInt("port"))
 		fmt.Printf("  LMCache Path: %s\n", viper.GetString("lmcache-path"))
 		fmt.Printf("  LMCache Chunk Size: %d\n", viper.GetInt("lmcache-chunk-size"))
@@ -230,6 +232,10 @@ func buildVllmCommand(modelIdentifier string, tensorParallelSize int) []string {
 	maxModelLen := viper.GetInt("max-model-len")
 	vllmCmd = append(vllmCmd, "--max-model-len", strconv.Itoa(maxModelLen))
 
+	// Add max batched tokens
+	maxBatchedTokens := viper.GetInt("max-num-batched-tokens")
+	vllmCmd = append(vllmCmd, "--max-num-batched-tokens", strconv.Itoa(maxBatchedTokens))
+
 	// Add port
 	port := viper.GetInt("port")
 	vllmCmd = append(vllmCmd, "--port", strconv.Itoa(port))
@@ -286,6 +292,7 @@ func init() {
 	launchCmd.PersistentFlags().Float64("gpu-mem-util", 0.8, "GPU memory utilization for vLLM")
 	launchCmd.PersistentFlags().Int("max-sequences", 256, "The maximum number of sequences")
 	launchCmd.PersistentFlags().Int("max-model-len", 16384, "The maximum model length")
+	launchCmd.PersistentFlags().Int("max-num-batched-tokens", 16384, "The maximum number of batched tokens")
 	launchCmd.PersistentFlags().Int("port", 8000, "The port for the vLLM API server")
 
 	// Add GPU allocation flags
@@ -314,6 +321,7 @@ func init() {
 	_ = viper.BindPFlag("gpu-mem-util", launchCmd.PersistentFlags().Lookup("gpu-mem-util"))
 	_ = viper.BindPFlag("max-sequences", launchCmd.PersistentFlags().Lookup("max-sequences"))
 	_ = viper.BindPFlag("max-model-len", launchCmd.PersistentFlags().Lookup("max-model-len"))
+	_ = viper.BindPFlag("max-num-batched-tokens", launchCmd.PersistentFlags().Lookup("max-num-batched-tokens"))
 	_ = viper.BindPFlag("port", launchCmd.PersistentFlags().Lookup("port"))
 	_ = viper.BindPFlag("gpu-slots", launchCmd.PersistentFlags().Lookup("gpu-slots"))
 	_ = viper.BindPFlag("tensor-parallel-size", launchCmd.PersistentFlags().Lookup("tensor-parallel-size"))
