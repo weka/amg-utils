@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -18,11 +20,60 @@ The model_identifier is a required argument that specifies which model to deploy
 Examples:
   amgctl docker launch meta-llama/Llama-2-7b-chat-hf
   amgctl docker launch microsoft/DialoGPT-medium
-  amgctl docker launch --gpu-mem-util 0.8 --port 8080 openai-gpt-3.5-turbo`,
+  amgctl docker launch --gpu-mem-util 0.8 --port 8080 openai-gpt-3.5-turbo
+  amgctl docker launch --gpu-slots "0,1,2,3" meta-llama/Llama-2-7b-chat-hf
+  amgctl docker launch --tensor-parallel-size 2 microsoft/DialoGPT-medium`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		modelIdentifier := args[0]
 		fmt.Printf("amgctl docker launch called with model: %s\n", modelIdentifier)
+
+		// Handle GPU allocation logic
+		gpuSlots := viper.GetString("gpu-slots")
+		tensorParallelSize := viper.GetInt("tensor-parallel-size")
+		var cudaVisibleDevices string
+		var finalTensorParallelSize int
+
+		if gpuSlots != "" {
+			// Parse comma-separated GPU slots
+			gpuIDs := strings.Split(gpuSlots, ",")
+			var validGpuIDs []string
+
+			// Validate and clean up GPU IDs
+			for _, id := range gpuIDs {
+				id = strings.TrimSpace(id)
+				if _, err := strconv.Atoi(id); err != nil {
+					return fmt.Errorf("invalid GPU ID '%s' in --gpu-slots: must be numeric", id)
+				}
+				validGpuIDs = append(validGpuIDs, id)
+			}
+
+			if len(validGpuIDs) == 0 {
+				return fmt.Errorf("--gpu-slots cannot be empty")
+			}
+
+			cudaVisibleDevices = strings.Join(validGpuIDs, ",")
+			finalTensorParallelSize = len(validGpuIDs)
+		} else {
+			// Use tensor-parallel-size flag or auto-detect
+			if tensorParallelSize > 0 {
+				finalTensorParallelSize = tensorParallelSize
+			} else {
+				// Auto-detect GPU count
+				gpuCount, err := hardware.GetGpuCount()
+				if err != nil {
+					return fmt.Errorf("failed to auto-detect GPU count: %v", err)
+				}
+				finalTensorParallelSize = gpuCount
+			}
+
+			// Set CUDA_VISIBLE_DEVICES to use all available GPUs up to tensor-parallel-size
+			var deviceIDs []string
+			for i := 0; i < finalTensorParallelSize; i++ {
+				deviceIDs = append(deviceIDs, strconv.Itoa(i))
+			}
+			cudaVisibleDevices = strings.Join(deviceIDs, ",")
+		}
 
 		// Display configuration
 		fmt.Println("\nLaunch Configuration:")
@@ -35,6 +86,18 @@ Examples:
 		fmt.Printf("  LMCache Path: %s\n", viper.GetString("lmcache-path"))
 		fmt.Printf("  LMCache Chunk Size: %d\n", viper.GetInt("lmcache-chunk-size"))
 		fmt.Printf("  LMCache GDS Threads: %d\n", viper.GetInt("lmcache-gds-threads"))
+
+		// Display GPU allocation settings
+		fmt.Println("\nGPU Allocation:")
+		if gpuSlots != "" {
+			fmt.Printf("  GPU Slots (manual): %s\n", gpuSlots)
+		} else if tensorParallelSize > 0 {
+			fmt.Printf("  Tensor Parallel Size (manual): %d\n", tensorParallelSize)
+		} else {
+			fmt.Printf("  Tensor Parallel Size (auto-detected): %d\n", finalTensorParallelSize)
+		}
+		fmt.Printf("  CUDA_VISIBLE_DEVICES: %s\n", cudaVisibleDevices)
+		fmt.Printf("  Final Tensor Parallel Size: %d\n", finalTensorParallelSize)
 
 		// Detect and display NVIDIA GPU count
 		gpuCount, err := hardware.GetGpuCount()
@@ -95,6 +158,10 @@ func init() {
 	launchCmd.PersistentFlags().Int("max-model-len", 16384, "The maximum model length")
 	launchCmd.PersistentFlags().Int("port", 8000, "The port for the vLLM API server")
 
+	// Add GPU allocation flags
+	launchCmd.PersistentFlags().String("gpu-slots", "", "Comma-separated list of GPU IDs to use (e.g., '0,1,2,3')")
+	launchCmd.PersistentFlags().Int("tensor-parallel-size", 0, "Number of GPUs to use for tensor parallelism (used when --gpu-slots is not specified)")
+
 	// Add LMCache configuration flags
 	launchCmd.PersistentFlags().String("lmcache-path", "/mnt/weka/cache", "Path for the cache within the Weka mount")
 	launchCmd.PersistentFlags().Int("lmcache-chunk-size", 256, "LMCache chunk size")
@@ -108,6 +175,8 @@ func init() {
 	_ = viper.BindPFlag("max-sequences", launchCmd.PersistentFlags().Lookup("max-sequences"))
 	_ = viper.BindPFlag("max-model-len", launchCmd.PersistentFlags().Lookup("max-model-len"))
 	_ = viper.BindPFlag("port", launchCmd.PersistentFlags().Lookup("port"))
+	_ = viper.BindPFlag("gpu-slots", launchCmd.PersistentFlags().Lookup("gpu-slots"))
+	_ = viper.BindPFlag("tensor-parallel-size", launchCmd.PersistentFlags().Lookup("tensor-parallel-size"))
 	_ = viper.BindPFlag("lmcache-path", launchCmd.PersistentFlags().Lookup("lmcache-path"))
 	_ = viper.BindPFlag("lmcache-chunk-size", launchCmd.PersistentFlags().Lookup("lmcache-chunk-size"))
 	_ = viper.BindPFlag("lmcache-gds-threads", launchCmd.PersistentFlags().Lookup("lmcache-gds-threads"))
