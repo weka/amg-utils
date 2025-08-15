@@ -57,6 +57,20 @@ RUN wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION
 # Setup host with amgctl (use upstream LMCache and VLLM)
 RUN amgctl host setup --lmcache-repo "https://github.com/LMCache/LMCache.git" --lmcache-commit "v0.3.3" --vllm-version "0.10.0" --skip-hotfixes
 
+# Create amg-vllm wrapper script
+RUN echo '#!/bin/bash' > /usr/local/bin/amg-vllm && \
+    echo '# AMG vLLM Wrapper Script' >> /usr/local/bin/amg-vllm && \
+    echo '# This script activates the uv environment and runs vllm with provided arguments' >> /usr/local/bin/amg-vllm && \
+    echo '' >> /usr/local/bin/amg-vllm && \
+    echo 'set -e' >> /usr/local/bin/amg-vllm && \
+    echo '' >> /usr/local/bin/amg-vllm && \
+    echo '# Activate the uv environment' >> /usr/local/bin/amg-vllm && \
+    echo 'source /root/amg_stable/.venv/bin/activate' >> /usr/local/bin/amg-vllm && \
+    echo '' >> /usr/local/bin/amg-vllm && \
+    echo '# Run vllm with all provided arguments' >> /usr/local/bin/amg-vllm && \
+    echo 'exec vllm "$@"' >> /usr/local/bin/amg-vllm && \
+    chmod +x /usr/local/bin/amg-vllm
+
 # Activate uv environment on login
 RUN echo "source /root/amg_stable/.venv/bin/activate" >> /root/.bashrc
 

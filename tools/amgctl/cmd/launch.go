@@ -244,7 +244,8 @@ func generateDockerCommand(modelIdentifier, cudaVisibleDevices string, tensorPar
 func buildVllmCommand(modelIdentifier string, tensorParallelSize int) []string {
 	var vllmCmd []string
 
-	vllmCmd = append(vllmCmd, "vllm", "serve", modelIdentifier)
+	// Use the amg-vllm wrapper script (handles environment activation)
+	vllmCmd = append(vllmCmd, "amg-vllm", "serve", modelIdentifier)
 
 	// Add tensor parallel size
 	vllmCmd = append(vllmCmd, "--tensor-parallel-size", strconv.Itoa(tensorParallelSize))
@@ -301,8 +302,9 @@ func executeDockerCommand(dockerCmd []string) error {
 	// Create the command
 	cmd := exec.Command(dockerCmd[0], dockerCmd[1:]...)
 
-	// Stream stdout and stderr to the user's terminal in real-time
-	cmd.Stdout = os.Stdout
+	// Capture the container ID from stdout
+	var stdout strings.Builder
+	cmd.Stdout = &stdout
 	cmd.Stderr = os.Stderr
 
 	// Set up proper signal handling for the child process
@@ -317,7 +319,21 @@ func executeDockerCommand(dockerCmd []string) error {
 		return fmt.Errorf("docker command failed: %w", err)
 	}
 
-	fmt.Println("\n✅ Docker container launched successfully!")
+	// Get the container ID from stdout
+	containerID := strings.TrimSpace(stdout.String())
+	if containerID == "" {
+		fmt.Println("\n✅ Docker container launched successfully!")
+		fmt.Println("💡 Note: To check container status, use: docker ps")
+		fmt.Println("💡 To view container logs, use: docker logs <container_id>")
+		return nil
+	}
+
+	fmt.Printf("\n✅ Docker container launched successfully!\n")
+	fmt.Printf("📦 Container ID: %s\n", containerID)
+	fmt.Printf("💡 To check container status: docker ps\n")
+	fmt.Printf("💡 To view container logs: docker logs %s\n", containerID)
+	fmt.Printf("💡 To stop the container: docker stop %s\n", containerID)
+
 	return nil
 }
 
