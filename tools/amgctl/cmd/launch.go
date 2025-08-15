@@ -26,7 +26,8 @@ Examples:
   amgctl docker launch --gpu-slots "0,1,2,3" meta-llama/Llama-2-7b-chat-hf
   amgctl docker launch --tensor-parallel-size 2 microsoft/DialoGPT-medium
   amgctl docker launch --docker-image "custom/vllm:v1.0" test-model
-  amgctl docker launch --dry-run meta-llama/Llama-2-7b-chat-hf`,
+  amgctl docker launch --dry-run meta-llama/Llama-2-7b-chat-hf
+  amgctl docker launch --no-enable-prefix-caching --lmcache-local-cpu my-model`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		modelIdentifier := args[0]
@@ -89,6 +90,10 @@ Examples:
 		fmt.Printf("  LMCache Path: %s\n", viper.GetString("lmcache-path"))
 		fmt.Printf("  LMCache Chunk Size: %d\n", viper.GetInt("lmcache-chunk-size"))
 		fmt.Printf("  LMCache GDS Threads: %d\n", viper.GetInt("lmcache-gds-threads"))
+		fmt.Printf("  LMCache cuFile Buffer Size: %s\n", viper.GetString("lmcache-cufile-buffer-size"))
+		fmt.Printf("  LMCache Local CPU: %t\n", viper.GetBool("lmcache-local-cpu"))
+		fmt.Printf("  LMCache Save Decode Cache: %t\n", viper.GetBool("lmcache-save-decode-cache"))
+		fmt.Printf("  vLLM Prefix Caching Disabled: %t\n", viper.GetBool("no-enable-prefix-caching"))
 
 		// Display GPU allocation settings
 		fmt.Println("\nGPU Allocation:")
@@ -171,10 +176,16 @@ func generateDockerCommand(modelIdentifier, cudaVisibleDevices string, tensorPar
 	lmcachePath := viper.GetString("lmcache-path")
 	lmcacheChunkSize := viper.GetInt("lmcache-chunk-size")
 	lmcacheGdsThreads := viper.GetInt("lmcache-gds-threads")
+	lmcacheCufileBufferSize := viper.GetString("lmcache-cufile-buffer-size")
+	lmcacheLocalCpu := viper.GetBool("lmcache-local-cpu")
+	lmcacheSaveDecodeCache := viper.GetBool("lmcache-save-decode-cache")
 
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_PATH=%s", lmcachePath))
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_CHUNK_SIZE=%d", lmcacheChunkSize))
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_GDS_THREADS=%d", lmcacheGdsThreads))
+	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_CUFILE_BUFFER_SIZE=%s", lmcacheCufileBufferSize))
+	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_LOCAL_CPU=%t", lmcacheLocalCpu))
+	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_SAVE_DECODE_CACHE=%t", lmcacheSaveDecodeCache))
 
 	// Add port mapping for vLLM API server
 	port := viper.GetInt("port")
@@ -225,6 +236,11 @@ func buildVllmCommand(modelIdentifier string, tensorParallelSize int) []string {
 
 	// Add host binding
 	vllmCmd = append(vllmCmd, "--host", "0.0.0.0")
+
+	// Add prefix caching flag if disabled
+	if viper.GetBool("no-enable-prefix-caching") {
+		vllmCmd = append(vllmCmd, "--no-enable-prefix-caching")
+	}
 
 	return vllmCmd
 }
@@ -280,6 +296,12 @@ func init() {
 	launchCmd.PersistentFlags().String("lmcache-path", "/mnt/weka/cache", "Path for the cache within the Weka mount")
 	launchCmd.PersistentFlags().Int("lmcache-chunk-size", 256, "LMCache chunk size")
 	launchCmd.PersistentFlags().Int("lmcache-gds-threads", 32, "LMCache GDS threads")
+	launchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", "8192", "LMCache cuFile buffer size")
+	launchCmd.PersistentFlags().Bool("lmcache-local-cpu", false, "Enable LMCache local CPU processing")
+	launchCmd.PersistentFlags().Bool("lmcache-save-decode-cache", true, "Enable LMCache decode cache saving")
+
+	// Add vLLM configuration flags
+	launchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
 
 	// Bind flags to Viper for configuration management
 	// Note: viper.BindPFlag errors are typically only due to programming errors (nil flags)
@@ -296,4 +318,8 @@ func init() {
 	_ = viper.BindPFlag("lmcache-path", launchCmd.PersistentFlags().Lookup("lmcache-path"))
 	_ = viper.BindPFlag("lmcache-chunk-size", launchCmd.PersistentFlags().Lookup("lmcache-chunk-size"))
 	_ = viper.BindPFlag("lmcache-gds-threads", launchCmd.PersistentFlags().Lookup("lmcache-gds-threads"))
+	_ = viper.BindPFlag("lmcache-cufile-buffer-size", launchCmd.PersistentFlags().Lookup("lmcache-cufile-buffer-size"))
+	_ = viper.BindPFlag("lmcache-local-cpu", launchCmd.PersistentFlags().Lookup("lmcache-local-cpu"))
+	_ = viper.BindPFlag("lmcache-save-decode-cache", launchCmd.PersistentFlags().Lookup("lmcache-save-decode-cache"))
+	_ = viper.BindPFlag("no-enable-prefix-caching", launchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
 }
