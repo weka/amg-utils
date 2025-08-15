@@ -337,7 +337,7 @@ func init() {
 	launchCmd.PersistentFlags().Int("tensor-parallel-size", 0, "Number of GPUs to use for tensor parallelism (used when --gpu-slots is not specified)")
 
 	// Add Docker configuration flags
-	launchCmd.PersistentFlags().String("docker-image", "", "Docker image to use for the vLLM container (defaults to sdimitro509/amg:<amgctl-version>, auto-pulled if needed)")
+	launchCmd.PersistentFlags().String("docker-image", "", "Docker image to use for the vLLM container (defaults to sdimitro509/amg:v<amgctl-version>, auto-pulled if needed)")
 	launchCmd.PersistentFlags().Bool("dry-run", false, "Print the Docker command that would be executed without actually running it")
 
 	// Add LMCache configuration flags

@@ -38,7 +38,7 @@ func runDockerPull(version, name string) error {
 	fmt.Println("🐳 Docker Pull Command")
 
 	// Construct the image name
-	imageName := fmt.Sprintf("sdimitro509/amg:%s", version)
+	imageName := fmt.Sprintf("sdimitro509/amg:v%s", version)
 	fmt.Printf("Pulling image: %s\n", imageName)
 
 	// Execute docker pull command
@@ -73,7 +73,7 @@ func runDockerPull(version, name string) error {
 
 // getDefaultDockerImage returns the default Docker image based on amgctl version
 func getDefaultDockerImage() string {
-	return fmt.Sprintf("sdimitro509/amg:%s", version)
+	return fmt.Sprintf("sdimitro509/amg:v%s", version)
 }
 
 // imageExists checks if a Docker image exists locally
