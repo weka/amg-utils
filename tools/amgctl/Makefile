@@ -23,13 +23,15 @@ deps:
 .PHONY: build-all
 build-all: clean
 	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME)-linux-amd64 $(MAIN_PACKAGE)
-	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -o $(BINARY_NAME)-linux-arm64 $(MAIN_PACKAGE)
+	@echo "Note: ARM64 cross-compilation requires aarch64-linux-gnu-gcc toolchain"
+	@echo "Install with: sudo apt-get install gcc-aarch64-linux-gnu"
+	CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc GOOS=linux GOARCH=arm64 go build -o $(BINARY_NAME)-linux-arm64 $(MAIN_PACKAGE)
 
 # Build release binaries with optimizations (for GitHub releases)
 .PHONY: build-release
 build-release: clean
 	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o $(BINARY_NAME)-linux-amd64 $(MAIN_PACKAGE)
-	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o $(BINARY_NAME)-linux-arm64 $(MAIN_PACKAGE)
+	CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o $(BINARY_NAME)-linux-arm64 $(MAIN_PACKAGE)
 	sha256sum $(BINARY_NAME)-* > checksums.txt
 
 # Run tests
