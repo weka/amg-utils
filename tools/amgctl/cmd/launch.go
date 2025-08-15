@@ -29,10 +29,17 @@ Examples:
   amgctl docker launch --dry-run meta-llama/Llama-2-7b-chat-hf
   amgctl docker launch --no-enable-prefix-caching --lmcache-local-cpu my-model
   amgctl docker launch --max-num-batched-tokens 32768 --max-model-len 8192 my-model
-  amgctl docker launch --hf-home "/custom/hf/cache" my-model`,
+  amgctl docker launch --hf-home "/custom/hf/cache" my-model
+  amgctl docker launch --docker-arg "--memory=32g" --vllm-arg "--disable-log-stats" my-model
+  amgctl docker launch --vllm-env "CUSTOM_VAR=value" --vllm-env "DEBUG=1" my-model`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		modelIdentifier := args[0]
+
+		// Perform pre-flight checks
+		if err := performPreflightChecks(); err != nil {
+			return err
+		}
 
 		// Handle GPU allocation logic
 		gpuSlots := viper.GetString("gpu-slots")
@@ -195,9 +202,25 @@ func generateDockerCommand(modelIdentifier, cudaVisibleDevices string, tensorPar
 	hfHome := viper.GetString("hf-home")
 	cmd = append(cmd, "-e", fmt.Sprintf("HF_HOME=%s", hfHome))
 
+	// Add custom environment variables from --vllm-env
+	vllmEnvVars := viper.GetStringSlice("vllm-env")
+	for _, envVar := range vllmEnvVars {
+		if envVar != "" {
+			cmd = append(cmd, "-e", envVar)
+		}
+	}
+
 	// Add port mapping for vLLM API server
 	port := viper.GetInt("port")
 	cmd = append(cmd, "-p", fmt.Sprintf("%d:%d", port, port))
+
+	// Add custom docker arguments from --docker-arg
+	dockerArgs := viper.GetStringSlice("docker-arg")
+	for _, arg := range dockerArgs {
+		if arg != "" {
+			cmd = append(cmd, arg)
+		}
+	}
 
 	// Docker image name - use version-based default
 	dockerImage := viper.GetString("docker-image")
@@ -257,6 +280,14 @@ func buildVllmCommand(modelIdentifier string, tensorParallelSize int) []string {
 	// Add LMCache KV transfer configuration (always included)
 	kvTransferConfig := `{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_connector_extra_config": {}}`
 	vllmCmd = append(vllmCmd, "--kv-transfer-config", kvTransferConfig)
+
+	// Add custom vLLM arguments from --vllm-arg
+	vllmArgs := viper.GetStringSlice("vllm-arg")
+	for _, arg := range vllmArgs {
+		if arg != "" {
+			vllmCmd = append(vllmCmd, arg)
+		}
+	}
 
 	return vllmCmd
 }
@@ -323,6 +354,11 @@ func init() {
 	// Add vLLM configuration flags
 	launchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
 
+	// Add escape hatch flags for advanced customization
+	launchCmd.PersistentFlags().StringSlice("docker-arg", []string{}, "Additional arguments to pass to docker run command (repeatable)")
+	launchCmd.PersistentFlags().StringSlice("vllm-arg", []string{}, "Additional arguments to pass to vllm serve command (repeatable)")
+	launchCmd.PersistentFlags().StringSlice("vllm-env", []string{}, "Additional environment variables for vllm container in KEY=VALUE format (repeatable)")
+
 	// Bind flags to Viper for configuration management
 	// Note: viper.BindPFlag errors are typically only due to programming errors (nil flags)
 	// and are safe to ignore in this context as flags are defined above
@@ -344,4 +380,37 @@ func init() {
 	_ = viper.BindPFlag("lmcache-save-decode-cache", launchCmd.PersistentFlags().Lookup("lmcache-save-decode-cache"))
 	_ = viper.BindPFlag("hf-home", launchCmd.PersistentFlags().Lookup("hf-home"))
 	_ = viper.BindPFlag("no-enable-prefix-caching", launchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
+	_ = viper.BindPFlag("docker-arg", launchCmd.PersistentFlags().Lookup("docker-arg"))
+	_ = viper.BindPFlag("vllm-arg", launchCmd.PersistentFlags().Lookup("vllm-arg"))
+	_ = viper.BindPFlag("vllm-env", launchCmd.PersistentFlags().Lookup("vllm-env"))
+}
+
+// performPreflightChecks validates system requirements and configuration before execution
+func performPreflightChecks() error {
+	// Check if docker command exists in PATH
+	if _, err := exec.LookPath("docker"); err != nil {
+		return fmt.Errorf("docker command not found in PATH. Please install Docker and ensure it's available in your system PATH")
+	}
+
+	// Check if weka-mount path exists
+	wekaMount := viper.GetString("weka-mount")
+	if wekaMount != "" {
+		if _, err := os.Stat(wekaMount); os.IsNotExist(err) {
+			return fmt.Errorf("weka mount path '%s' does not exist. Please ensure the path exists or specify a different --weka-mount", wekaMount)
+		} else if err != nil {
+			return fmt.Errorf("failed to access weka mount path '%s': %v", wekaMount, err)
+		}
+	}
+
+	// Check if hf-home directory exists
+	hfHome := viper.GetString("hf-home")
+	if hfHome != "" {
+		if _, err := os.Stat(hfHome); os.IsNotExist(err) {
+			return fmt.Errorf("hugging Face cache directory '%s' does not exist. Please create the directory or specify a different --hf-home", hfHome)
+		} else if err != nil {
+			return fmt.Errorf("failed to access Hugging Face cache directory '%s': %v", hfHome, err)
+		}
+	}
+
+	return nil
 }
