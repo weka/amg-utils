@@ -2,10 +2,6 @@
 
 `amgctl` is a command line interface for managing Weka AMG (Augmented Memory Grid) environments. It provides tools for setting up, managing, and monitoring AMG environments with advanced hardware discovery capabilities for HPC workloads.
 
-## Version
-
-Current version: **0.1.6**
-
 ## Features
 
 - **Advanced Hardware Discovery**: Automatic detection of NVIDIA GPUs and InfiniBand devices
