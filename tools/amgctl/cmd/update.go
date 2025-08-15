@@ -133,9 +133,9 @@ func downloadAndInstall(url string) error {
 		return fmt.Errorf("could not create temporary file: %w", err)
 	}
 	defer func() {
-		err := tmpFile.Close()
-		if err != nil {
-			panic(err)
+		// Only close if not already closed
+		if tmpFile != nil {
+			_ = tmpFile.Close() // Ignore error in defer
 		}
 	}()
 
@@ -161,13 +161,17 @@ func downloadAndInstall(url string) error {
 		return fmt.Errorf("could not make temporary file executable: %w", err)
 	}
 
+	// Store the temp file name before closing
+	tmpFileName := tmpFile.Name()
+
 	// Close the file so it can be renamed
 	if err := tmpFile.Close(); err != nil {
 		return fmt.Errorf("could not close temporary file: %w", err)
 	}
+	tmpFile = nil // Mark as closed for defer
 
 	// Replace the old executable with the new one
-	if err := os.Rename(tmpFile.Name(), exePath); err != nil {
+	if err := os.Rename(tmpFileName, exePath); err != nil {
 		return fmt.Errorf("could not replace executable: %w", err)
 	}
 
