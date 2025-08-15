@@ -103,49 +103,12 @@ Examples:
 		fmt.Printf("  CUDA_VISIBLE_DEVICES: %s\n", cudaVisibleDevices)
 		fmt.Printf("  Final Tensor Parallel Size: %d\n", finalTensorParallelSize)
 
-		// Detect and display NVIDIA GPU count
-		gpuCount, err := hardware.GetGpuCount()
-		if err != nil {
-			fmt.Printf("Warning: Failed to detect NVIDIA GPUs: %v\n", err)
-			fmt.Println("This may be expected if NVIDIA drivers are not installed or no GPUs are present.")
-		} else {
-			fmt.Printf("Detected %d NVIDIA GPU(s)\n", gpuCount)
-
-			// Optionally display detailed GPU information
-			if gpuCount > 0 {
-				gpuInfo, infoErr := hardware.GetGpuInfo()
-				if infoErr != nil {
-					fmt.Printf("Warning: Failed to get GPU details: %v\n", infoErr)
-				} else {
-					fmt.Println("GPU Details:")
-					for _, info := range gpuInfo {
-						fmt.Printf("  %s\n", info)
-					}
-				}
-			}
-		}
-
-		// Detect and display InfiniBand device flags
+		// Detect InfiniBand device flags for Docker command generation
 		ibFlags, err := hardware.GetInfinibandDeviceFlags()
 		if err != nil {
+			// Log warning but continue - InfiniBand is optional
 			fmt.Printf("Warning: Failed to detect InfiniBand devices: %v\n", err)
-			fmt.Println("This may be expected if InfiniBand devices are not present or drivers are not installed.")
-		} else if ibFlags != "" {
-			fmt.Println("\nInfiniBand Docker Device Flags:")
-			fmt.Printf("%s\n", ibFlags)
-
-			// Optionally display detailed InfiniBand information
-			ibInfo, infoErr := hardware.GetInfinibandDeviceInfo()
-			if infoErr != nil {
-				fmt.Printf("Warning: Failed to get InfiniBand device details: %v\n", infoErr)
-			} else {
-				fmt.Println("\nInfiniBand Device Details:")
-				for _, info := range ibInfo {
-					fmt.Printf("  %s\n", info)
-				}
-			}
-		} else {
-			fmt.Println("No InfiniBand devices detected")
+			ibFlags = "" // Ensure empty string for Docker command generation
 		}
 
 		// Generate the Docker command
@@ -161,7 +124,7 @@ Examples:
 
 		// Check if dry-run mode is enabled
 		dryRun := viper.GetBool("dry-run")
-		
+
 		if dryRun {
 			// Dry-run mode: display the command and exit
 			fmt.Println("\n🔍 Dry Run Mode - Docker Command Preview:")
@@ -275,17 +238,17 @@ func executeDockerCommand(dockerCmd []string) error {
 
 	// Create the command
 	cmd := exec.Command(dockerCmd[0], dockerCmd[1:]...)
-	
+
 	// Stream stdout and stderr to the user's terminal in real-time
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	// Set up proper signal handling for the child process
 	cmd.Stdin = os.Stdin
 
 	// Display the command being executed (abbreviated version)
 	fmt.Printf("Running: %s %s...\n", dockerCmd[0], strings.Join(dockerCmd[1:3], " "))
-	
+
 	// Execute the command
 	err := cmd.Run()
 	if err != nil {
