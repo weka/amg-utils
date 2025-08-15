@@ -55,6 +55,7 @@ RUN wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION
     chmod +x /usr/local/bin/amgctl
 
 # Setup host with amgctl (use upstream LMCache and VLLM)
+# The amgctl binary now automatically detects CUDA version and uses appropriate PyTorch index
 RUN amgctl host setup --lmcache-repo "https://github.com/LMCache/LMCache.git" --lmcache-commit "v0.3.3" --vllm-version "0.10.0" --skip-hotfixes
 
 # Create amg-vllm wrapper script
