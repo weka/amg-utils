@@ -182,7 +182,7 @@ func generateDockerCommand(modelIdentifier, cudaVisibleDevices string, tensorPar
 
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_PATH=%s", lmcachePath))
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_CHUNK_SIZE=%d", lmcacheChunkSize))
-	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_GDS_THREADS=%d", lmcacheGdsThreads))
+	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_EXTRA_CONFIG={\"gds_io_threads\": %d}", lmcacheGdsThreads))
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_CUFILE_BUFFER_SIZE=%s", lmcacheCufileBufferSize))
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_LOCAL_CPU=%t", lmcacheLocalCpu))
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_SAVE_DECODE_CACHE=%t", lmcacheSaveDecodeCache))
@@ -241,6 +241,10 @@ func buildVllmCommand(modelIdentifier string, tensorParallelSize int) []string {
 	if viper.GetBool("no-enable-prefix-caching") {
 		vllmCmd = append(vllmCmd, "--no-enable-prefix-caching")
 	}
+
+	// Add LMCache KV transfer configuration (always included)
+	kvTransferConfig := `{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_connector_extra_config": {}}`
+	vllmCmd = append(vllmCmd, "--kv-transfer-config", kvTransferConfig)
 
 	return vllmCmd
 }
