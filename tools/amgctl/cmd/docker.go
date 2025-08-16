@@ -109,5 +109,3 @@ func pullImageWithFallback(imageName string) (string, error) {
 	fmt.Printf("✅ Successfully pulled image: %s\n", imageName)
 	return imageName, nil
 }
-
-

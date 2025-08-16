@@ -31,7 +31,8 @@ Examples:
   amgctl docker launch --max-num-batched-tokens 32768 --max-model-len 8192 my-model
   amgctl docker launch --hf-home "/custom/hf/cache" my-model
   amgctl docker launch --docker-arg "--memory=32g" --vllm-arg "--disable-log-stats" my-model
-  amgctl docker launch --vllm-env "CUSTOM_VAR=value" --vllm-env "DEBUG=1" my-model`,
+  amgctl docker launch --vllm-env "CUSTOM_VAR=value" --vllm-env "DEBUG=1" my-model
+  amgctl docker launch --skip-safefasttensors my-model`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		modelIdentifier := args[0]
@@ -202,6 +203,11 @@ func generateDockerCommand(modelIdentifier, cudaVisibleDevices string, tensorPar
 	hfHome := viper.GetString("hf-home")
 	cmd = append(cmd, "-e", fmt.Sprintf("HF_HOME=%s", hfHome))
 
+	// Add USE_FASTSAFETENSOR environment variable unless --skip-safefasttensors is set
+	if !viper.GetBool("skip-safefasttensors") {
+		cmd = append(cmd, "-e", "USE_FASTSAFETENSOR=true")
+	}
+
 	// Add custom environment variables from --vllm-env
 	vllmEnvVars := viper.GetStringSlice("vllm-env")
 	for _, envVar := range vllmEnvVars {
@@ -286,6 +292,11 @@ func buildVllmCommand(modelIdentifier string, tensorParallelSize int) []string {
 	// Add LMCache KV transfer configuration (always included)
 	kvTransferConfig := `{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_connector_extra_config": {}}`
 	vllmCmd = append(vllmCmd, "--kv-transfer-config", kvTransferConfig)
+
+	// Add load-format fastsafetensors unless --skip-safefasttensors is set
+	if !viper.GetBool("skip-safefasttensors") {
+		vllmCmd = append(vllmCmd, "--load-format", "fastsafetensors")
+	}
 
 	// Add custom vLLM arguments from --vllm-arg
 	vllmArgs := viper.GetStringSlice("vllm-arg")
@@ -374,6 +385,7 @@ func init() {
 
 	// Add vLLM configuration flags
 	launchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
+	launchCmd.PersistentFlags().Bool("skip-safefasttensors", false, "Skip adding USE_FASTSAFETENSOR=true env var and --load-format fastsafetensors argument")
 
 	// Add escape hatch flags for advanced customization
 	launchCmd.PersistentFlags().StringSlice("docker-arg", []string{}, "Additional arguments to pass to docker run command (repeatable)")
@@ -401,6 +413,7 @@ func init() {
 	_ = viper.BindPFlag("lmcache-save-decode-cache", launchCmd.PersistentFlags().Lookup("lmcache-save-decode-cache"))
 	_ = viper.BindPFlag("hf-home", launchCmd.PersistentFlags().Lookup("hf-home"))
 	_ = viper.BindPFlag("no-enable-prefix-caching", launchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
+	_ = viper.BindPFlag("skip-safefasttensors", launchCmd.PersistentFlags().Lookup("skip-safefasttensors"))
 	_ = viper.BindPFlag("docker-arg", launchCmd.PersistentFlags().Lookup("docker-arg"))
 	_ = viper.BindPFlag("vllm-arg", launchCmd.PersistentFlags().Lookup("vllm-arg"))
 	_ = viper.BindPFlag("vllm-env", launchCmd.PersistentFlags().Lookup("vllm-env"))
