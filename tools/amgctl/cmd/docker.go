@@ -39,24 +39,17 @@ func runDockerPull(version, name string) error {
 
 	// Construct the image name
 	imageName := fmt.Sprintf("sdimitro509/amg:v%s", version)
-	fmt.Printf("Pulling image: %s\n", imageName)
 
-	// Execute docker pull command
-	cmd := exec.Command("docker", "pull", imageName)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
+	// Use the fallback logic to pull the image
+	actualImageName, err := pullImageWithFallback(imageName)
 	if err != nil {
-		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
+		return fmt.Errorf("failed to pull image: %w", err)
 	}
-
-	fmt.Printf("✅ Successfully pulled image: %s\n", imageName)
 
 	// If a custom name is provided, tag the image
 	if name != "" {
 		fmt.Printf("Tagging image as: %s\n", name)
-		tagCmd := exec.Command("docker", "tag", imageName, name)
+		tagCmd := exec.Command("docker", "tag", actualImageName, name)
 		tagCmd.Stdout = os.Stdout
 		tagCmd.Stderr = os.Stderr
 
@@ -82,13 +75,9 @@ func imageExists(imageName string) bool {
 	return cmd.Run() == nil
 }
 
-// pullImageIfNeeded automatically pulls the image if it doesn't exist locally
-func pullImageIfNeeded(imageName string) error {
-	if imageExists(imageName) {
-		return nil // Image already exists
-	}
-
-	fmt.Printf("Docker image '%s' not found locally. Pulling it...\n", imageName)
+// pullImageWithFallback attempts to pull a Docker image with fallback to latest
+func pullImageWithFallback(imageName string) (string, error) {
+	fmt.Printf("Attempting to pull image: %s\n", imageName)
 
 	cmd := exec.Command("docker", "pull", imageName)
 	cmd.Stdout = os.Stdout
@@ -96,9 +85,29 @@ func pullImageIfNeeded(imageName string) error {
 
 	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
+		// Extract base image name without tag for fallback
+		baseImage := "sdimitro509/amg"
+		latestImage := baseImage + ":latest"
+
+		fmt.Printf("❌ Failed to pull %s\n", imageName)
+		fmt.Printf("🔄 Falling back to latest version: %s\n", latestImage)
+
+		// Try pulling the latest tag
+		latestCmd := exec.Command("docker", "pull", latestImage)
+		latestCmd.Stdout = os.Stdout
+		latestCmd.Stderr = os.Stderr
+
+		err = latestCmd.Run()
+		if err != nil {
+			return "", fmt.Errorf("failed to pull both %s and %s: %w", imageName, latestImage, err)
+		}
+
+		fmt.Printf("✅ Successfully pulled fallback image: %s\n", latestImage)
+		return latestImage, nil
 	}
 
 	fmt.Printf("✅ Successfully pulled image: %s\n", imageName)
-	return nil
+	return imageName, nil
 }
+
+

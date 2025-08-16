@@ -226,9 +226,14 @@ func generateDockerCommand(modelIdentifier, cudaVisibleDevices string, tensorPar
 	dockerImage := viper.GetString("docker-image")
 	if dockerImage == "" {
 		dockerImage = getDefaultDockerImage()
-		// Auto-pull the image if it doesn't exist locally
-		if err := pullImageIfNeeded(dockerImage); err != nil {
-			return nil, fmt.Errorf("failed to ensure Docker image is available: %w", err)
+		// Auto-pull the image if it doesn't exist locally, handling fallback
+		if !imageExists(dockerImage) {
+			actualImage, err := pullImageWithFallback(dockerImage)
+			if err != nil {
+				return nil, fmt.Errorf("failed to ensure Docker image is available: %w", err)
+			}
+			// Use the actual image that was pulled (could be latest if fallback occurred)
+			dockerImage = actualImage
 		}
 	}
 	cmd = append(cmd, dockerImage)
