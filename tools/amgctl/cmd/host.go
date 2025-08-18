@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -57,11 +58,21 @@ var hostUpdateCmd = &cobra.Command{
 	},
 }
 
+var hostPreFlightCmd = &cobra.Command{
+	Use:   "pre-flight",
+	Short: "Verify system readiness for AMG setup and execution",
+	Long:  `Perform pre-flight checks to ensure the host environment is ready for AMG setup and execution. This includes validating required tools, configurations, and system settings.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runHostPreFlight()
+	},
+}
+
 func init() {
 	hostCmd.AddCommand(hostSetupCmd)
 	hostCmd.AddCommand(hostStatusCmd)
 	hostCmd.AddCommand(hostClearCmd)
 	hostCmd.AddCommand(hostUpdateCmd)
+	hostCmd.AddCommand(hostPreFlightCmd)
 
 	// Add flags to hostSetupCmd
 	hostSetupCmd.Flags().Bool("skip-hotfixes", false, "Skip applying hotfixes like downgrading transformers")
@@ -154,6 +165,84 @@ func loadSetupState() (*SetupState, error) {
 func commandExists(cmd string) bool {
 	_, err := exec.LookPath(cmd)
 	return err == nil
+}
+
+// CuFileConfig represents the structure of /etc/cufile.json
+type CuFileConfig struct {
+	Execution struct {
+		MaxIOThreads int `json:"max_io_threads"`
+	} `json:"execution"`
+}
+
+// runHostSystemChecks performs shared system checks for both setup and pre-flight commands
+func runHostSystemChecks() error {
+	fmt.Println("--- System Checks ---")
+
+	// Check for required commands
+	if !commandExists("uv") {
+		return fmt.Errorf("uv command not found. Please install uv: https://docs.astral.sh/uv/getting-started/installation/")
+	}
+	fmt.Println("✅ uv command found")
+
+	if !commandExists("git") {
+		return fmt.Errorf("git command not found. Please install Git")
+	}
+	fmt.Println("✅ git command found")
+
+	// Check cufile.json configuration
+	if err := checkCuFileConfig(); err != nil {
+		// This is a warning, not a fatal error
+		fmt.Printf("⚠️  %v\n", err)
+	}
+
+	fmt.Println("✅ System checks completed")
+	return nil
+}
+
+// stripJSONComments removes C-style comments from JSON content
+func stripJSONComments(jsonData []byte) []byte {
+	// Remove single-line comments (//)
+	singleLineCommentRe := regexp.MustCompile(`//.*`)
+	result := singleLineCommentRe.ReplaceAll(jsonData, []byte(""))
+
+	// Remove multi-line comments (/* */)
+	multiLineCommentRe := regexp.MustCompile(`(?s)/\*.*?\*/`)
+	result = multiLineCommentRe.ReplaceAll(result, []byte(""))
+
+	return result
+}
+
+// checkCuFileConfig validates /etc/cufile.json configuration
+func checkCuFileConfig() error {
+	cufilePath := "/etc/cufile.json"
+
+	// Check if file exists
+	if _, err := os.Stat(cufilePath); os.IsNotExist(err) {
+		return fmt.Errorf("cufile.json not found at %s. Consider configuring CUDA file operations if needed", cufilePath)
+	}
+
+	// Read the file
+	data, err := os.ReadFile(cufilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", cufilePath, err)
+	}
+
+	// Strip comments from JSON content
+	cleanData := stripJSONComments(data)
+
+	// Parse JSON
+	var config CuFileConfig
+	if err := json.Unmarshal(cleanData, &config); err != nil {
+		return fmt.Errorf("failed to parse %s: %w", cufilePath, err)
+	}
+
+	// Check max_io_threads
+	if config.Execution.MaxIOThreads != 0 {
+		return fmt.Errorf("cufile.json warning: execution.max_io_threads is set to %d, but should be 0 for optimal performance", config.Execution.MaxIOThreads)
+	}
+
+	fmt.Println("✅ cufile.json configuration is optimal (execution.max_io_threads = 0)")
+	return nil
 }
 
 // isCondaActive checks if a conda environment is currently active
@@ -273,17 +362,10 @@ func runHostSetup(cmd *cobra.Command) error {
 func runLinuxSetup(state *SetupState) error {
 	fmt.Println("🐧 Running Linux setup...")
 
-	// Initial checks
-	fmt.Println("--- Initial Setup Checks ---")
-	if !commandExists("uv") {
-		return fmt.Errorf("uv command not found. Please install uv: https://docs.astral.sh/uv/getting-started/installation/")
+	// Run shared system checks
+	if err := runHostSystemChecks(); err != nil {
+		return err
 	}
-
-	if !commandExists("git") {
-		return fmt.Errorf("git command not found. Please install Git")
-	}
-
-	fmt.Println("✅ uv and Git commands found. Proceeding with setup.")
 
 	// Check and create uv virtual environment
 	if err := setupUvEnvironment(state); err != nil {
@@ -681,6 +763,31 @@ func runHostUpdate() error {
 	}
 
 	fmt.Println("🎉 Update completed successfully!")
+	return nil
+}
+
+func runHostPreFlight() error {
+	fmt.Println("🔍 Running AMG pre-flight checks...")
+	fmt.Println()
+
+	// Check that conda is not active
+	if err := checkCondaDeactivated(); err != nil {
+		return err
+	}
+
+	// Run system checks
+	if err := runHostSystemChecks(); err != nil {
+		return err
+	}
+
+	fmt.Println()
+	fmt.Println("🎉 Pre-flight checks completed successfully!")
+	fmt.Println()
+	fmt.Println("📋 Next Steps:")
+	fmt.Println("  • Your system is ready for AMG setup")
+	fmt.Println("  • Run 'amgctl host setup' to install and configure AMG")
+	fmt.Println("  • Run 'amgctl host status' to check environment status")
+
 	return nil
 }
 
