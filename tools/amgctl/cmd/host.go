@@ -950,15 +950,15 @@ func runHostStatus(verbose bool) error {
 		fmt.Printf("❌ Error checking repository: %v\n", err)
 	}
 
-	fmt.Println() // Add spacing
-
-	// Show PyTorch configuration
-	if err := showPyTorchInfo(); err != nil {
-		fmt.Printf("❌ Error checking PyTorch configuration: %v\n", err)
-	}
-
-	// Show installed packages and system resources only in verbose mode
+	// Show PyTorch configuration, installed packages and system resources only in verbose mode
 	if verbose {
+		fmt.Println() // Add spacing
+
+		// Show PyTorch configuration
+		if err := showPyTorchInfo(); err != nil {
+			fmt.Printf("❌ Error checking PyTorch configuration: %v\n", err)
+		}
+
 		fmt.Println() // Add spacing
 
 		// Show installed packages
@@ -974,7 +974,7 @@ func runHostStatus(verbose bool) error {
 		}
 	} else {
 		fmt.Println()
-		fmt.Println("💡 Use --verbose or -v to show installed packages and system resources")
+		fmt.Println("💡 Use --verbose or -v to show PyTorch configuration, installed packages and system resources")
 	}
 
 	return nil
