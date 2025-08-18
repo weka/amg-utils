@@ -30,6 +30,7 @@ Examples:
   amgctl docker launch --no-enable-prefix-caching --lmcache-local-cpu my-model
   amgctl docker launch --max-num-batched-tokens 32768 --max-model-len 8192 my-model
   amgctl docker launch --hf-home "/custom/hf/cache" my-model
+  amgctl docker launch --prometheus-multiproc-dir "/tmp/prometheus" my-model
   amgctl docker launch --docker-arg "--memory=32g" --vllm-arg "--disable-log-stats" my-model
   amgctl docker launch --vllm-env "CUSTOM_VAR=value" --vllm-env "DEBUG=1" my-model
   amgctl docker launch --skip-safefasttensors my-model`,
@@ -105,6 +106,7 @@ Examples:
 		fmt.Printf("  LMCache Local CPU: %t\n", viper.GetBool("lmcache-local-cpu"))
 		fmt.Printf("  LMCache Save Decode Cache: %t\n", viper.GetBool("lmcache-save-decode-cache"))
 		fmt.Printf("  Hugging Face Cache: %s\n", viper.GetString("hf-home"))
+		fmt.Printf("  Prometheus Multiproc Dir: %s\n", viper.GetString("prometheus-multiproc-dir"))
 		fmt.Printf("  vLLM Prefix Caching Disabled: %t\n", viper.GetBool("no-enable-prefix-caching"))
 
 		// Display GPU allocation settings
@@ -202,6 +204,10 @@ func generateDockerCommand(modelIdentifier, cudaVisibleDevices string, tensorPar
 	// Hugging Face environment variables
 	hfHome := viper.GetString("hf-home")
 	cmd = append(cmd, "-e", fmt.Sprintf("HF_HOME=%s", hfHome))
+
+	// Prometheus environment variables
+	prometheusDir := viper.GetString("prometheus-multiproc-dir")
+	cmd = append(cmd, "-e", fmt.Sprintf("PROMETHEUS_MULTIPROC_DIR=%s", prometheusDir))
 
 	// Add USE_FASTSAFETENSOR environment variable unless --skip-safefasttensors is set
 	if !viper.GetBool("skip-safefasttensors") {
@@ -383,6 +389,9 @@ func init() {
 	// Add Hugging Face configuration flags
 	launchCmd.PersistentFlags().String("hf-home", "/mnt/weka/hf_cache", "Hugging Face cache directory path")
 
+	// Add Prometheus configuration flags
+	launchCmd.PersistentFlags().String("prometheus-multiproc-dir", "/tmp/lmcache_prometheus", "Prometheus multiprocess directory path")
+
 	// Add vLLM configuration flags
 	launchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
 	launchCmd.PersistentFlags().Bool("skip-safefasttensors", false, "Skip adding USE_FASTSAFETENSOR=true env var and --load-format fastsafetensors argument")
@@ -412,6 +421,7 @@ func init() {
 	_ = viper.BindPFlag("lmcache-local-cpu", launchCmd.PersistentFlags().Lookup("lmcache-local-cpu"))
 	_ = viper.BindPFlag("lmcache-save-decode-cache", launchCmd.PersistentFlags().Lookup("lmcache-save-decode-cache"))
 	_ = viper.BindPFlag("hf-home", launchCmd.PersistentFlags().Lookup("hf-home"))
+	_ = viper.BindPFlag("prometheus-multiproc-dir", launchCmd.PersistentFlags().Lookup("prometheus-multiproc-dir"))
 	_ = viper.BindPFlag("no-enable-prefix-caching", launchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
 	_ = viper.BindPFlag("skip-safefasttensors", launchCmd.PersistentFlags().Lookup("skip-safefasttensors"))
 	_ = viper.BindPFlag("docker-arg", launchCmd.PersistentFlags().Lookup("docker-arg"))
