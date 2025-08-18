@@ -24,12 +24,12 @@ show_usage() {
     echo "Usage: $0 [version]"
     echo ""
     echo "Arguments:"
-    echo "  version    Version tag for the Docker image (e.g., v0.1.8)"
-    echo "             If not provided, will use 'dev' as the tag"
+    echo "  version    Version tag for the Docker image (e.g., v0.1.9)"
+    echo "             If not provided, will auto-detect latest git tag"
     echo ""
     echo "Examples:"
     echo "  $0 v0.1.9           # Build with specific version"
-    echo "  $0                  # Build with 'dev' tag"
+    echo "  $0                  # Build with latest git tag (auto-detected)"
     echo ""
 }
 
@@ -46,7 +46,7 @@ check_docker() {
     fi
 }
 
-# Get version from argument or use default
+# Get version from argument or detect from git
 get_version() {
     local version="$1"
     
@@ -55,8 +55,16 @@ get_version() {
         return
     fi
     
-    # Use 'dev' as default for local builds
-    echo "dev"
+    # Try to get latest tag for local builds (since we need a valid release)
+    local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+    if [ -n "$latest_tag" ]; then
+        echo "$latest_tag"
+        return
+    fi
+    
+    # Fallback to a known good version
+    print_warning "Could not detect git tag, using fallback version: v0.1.9"
+    echo "v0.1.9"
 }
 
 # Build Docker image locally
@@ -80,7 +88,8 @@ build_local() {
     
     # Tags for local build
     local tags="-t $image_name:$version"
-    if [ "$version" != "dev" ]; then
+    # Add local- prefix for version tags to distinguish from official releases
+    if [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         tags="$tags -t $image_name:local-$version"
     fi
     
@@ -92,7 +101,7 @@ build_local() {
     
     print_success "Successfully built Docker image:"
     print_success "  - $image_name:$version"
-    if [ "$version" != "dev" ]; then
+    if [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         print_success "  - $image_name:local-$version"
     fi
     
@@ -119,7 +128,11 @@ main() {
     
     # Get version
     local version=$(get_version "$1")
-    print_info "Using version: $version"
+    if [ "$1" = "" ]; then
+        print_info "No version specified, using latest tag: $version"
+    else
+        print_info "Using version: $version"
+    fi
     
     # Change to repository root if not already there
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
