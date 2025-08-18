@@ -47,6 +47,7 @@ func init() {
 	rootCmd.AddCommand(dockerCmd)
 	rootCmd.AddCommand(hostCmd)
 	rootCmd.AddCommand(hwCmd)
+	rootCmd.AddCommand(k8sCmd)
 	rootCmd.AddCommand(updateCmd)
 }
 
