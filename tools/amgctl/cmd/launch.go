@@ -426,6 +426,16 @@ func performPreflightChecks() error {
 		return fmt.Errorf("docker command not found in PATH. Please install Docker and ensure it's available in your system PATH")
 	}
 
+	// Check if nvidia-ctk command exists in PATH
+	if _, err := exec.LookPath("nvidia-ctk"); err != nil {
+		return fmt.Errorf("nvidia-ctk command not found in PATH. Please install NVIDIA Container Toolkit and ensure it's available in your system PATH")
+	}
+
+	// Check if nvidia-smi command exists in PATH
+	if _, err := exec.LookPath("nvidia-smi"); err != nil {
+		return fmt.Errorf("nvidia-smi command not found in PATH. Please install NVIDIA drivers and ensure nvidia-smi is available in your system PATH")
+	}
+
 	// Check if weka-mount path exists
 	wekaMount := viper.GetString("weka-mount")
 	if wekaMount != "" {
