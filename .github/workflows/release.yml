@@ -71,32 +71,64 @@ jobs:
         id: tag
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          # Get the current tag
+          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+          
+          # Get the previous tag
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "$CURRENT_TAG" | head -n 1)
+          
+          # If this is the first release, get all commits
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "This appears to be the first release"
+            COMMITS=$(git log --oneline --pretty=format:"- %s" | head -20)
+          else
+            echo "Getting commits between $PREVIOUS_TAG and $CURRENT_TAG"
+            COMMITS=$(git log --oneline --pretty=format:"- %s" "${PREVIOUS_TAG}..${CURRENT_TAG}")
+          fi
+          
+          # Create release notes
+          cat << EOF > release_notes.md
+          ## Changes in $CURRENT_TAG
+          
+          ### Release Notes
+          
+          $COMMITS
+          
+          ### Installation
+          
+          Download the binary for your Linux platform:
+          
+          - **Linux (x64)**: \`amgctl-linux-amd64\`
+          
+          ### Self-Update
+          
+          If you already have amgctl installed, you can update to this version by running:
+          
+          \`\`\`bash
+          amgctl update
+          \`\`\`
+          
+          ### Verification
+          
+          All binaries include SHA256 checksums in \`checksums.txt\` for verification.
+          EOF
+          
+          # Set the release notes as output (escape newlines for GitHub Actions)
+          {
+            echo "notes<<EOF"
+            cat release_notes.md
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
           name: Release ${{ steps.tag.outputs.tag }}
           tag_name: ${{ steps.tag.outputs.tag }}
-          body: |
-            ## Changes in ${{ steps.tag.outputs.tag }}
-            
-            ### Installation
-            
-            Download the binary for your Linux platform:
-            
-            - **Linux (x64)**: `amgctl-linux-amd64`
-            
-            ### Self-Update
-            
-            If you already have amgctl installed, you can update to this version by running:
-            
-            ```bash
-            amgctl update
-            ```
-            
-            ### Verification
-            
-            All binaries include SHA256 checksums in `checksums.txt` for verification.
-            
+          body: ${{ steps.release_notes.outputs.notes }}
           files: |
             binaries/*
           draft: false
