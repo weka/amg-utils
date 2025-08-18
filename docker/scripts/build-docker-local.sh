@@ -24,11 +24,11 @@ show_usage() {
     echo "Usage: $0 [version]"
     echo ""
     echo "Arguments:"
-    echo "  version    Version tag for the Docker image (e.g., v0.1.10)"
+    echo "  version    Version tag for the Docker image (e.g., v0.1.11)"
     echo "             If not provided, will auto-detect latest git tag"
     echo ""
     echo "Examples:"
-    echo "  $0 v0.1.10          # Build with specific version"
+    echo "  $0 v0.1.11          # Build with specific version"
     echo "  $0                  # Build with latest git tag (auto-detected)"
     echo ""
 }
@@ -63,8 +63,8 @@ get_version() {
     fi
     
     # Fallback to a known good version
-    print_warning "Could not detect git tag, using fallback version: v0.1.10"
-    echo "v0.1.10"
+    print_warning "Could not detect git tag, using fallback version: v0.1.11"
+    echo "v0.1.11"
 }
 
 # Build Docker image locally
