@@ -63,7 +63,8 @@ var hostPreFlightCmd = &cobra.Command{
 	Short: "Verify system readiness for AMG setup and execution",
 	Long:  `Perform pre-flight checks to ensure the host environment is ready for AMG setup and execution. This includes validating required tools, configurations, and system settings.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runHostPreFlight()
+		full, _ := cmd.Flags().GetBool("full")
+		return runHostPreFlight(full)
 	},
 }
 
@@ -83,6 +84,9 @@ func init() {
 
 	// Add flags to hostStatusCmd
 	hostStatusCmd.Flags().BoolP("verbose", "v", false, "Enable verbose output")
+
+	// Add flags to hostPreFlightCmd
+	hostPreFlightCmd.Flags().Bool("full", false, "Run comprehensive checks including GPU Direct Storage (GDS) validation")
 
 	// Add flags to hostClearCmd
 	hostClearCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt and proceed with deletion")
@@ -766,8 +770,12 @@ func runHostUpdate() error {
 	return nil
 }
 
-func runHostPreFlight() error {
-	fmt.Println("🔍 Running AMG pre-flight checks...")
+func runHostPreFlight(full bool) error {
+	if full {
+		fmt.Println("🔍 Running comprehensive AMG pre-flight checks...")
+	} else {
+		fmt.Println("🔍 Running AMG pre-flight checks...")
+	}
 	fmt.Println()
 
 	// Check that conda is not active
@@ -780,6 +788,14 @@ func runHostPreFlight() error {
 		return err
 	}
 
+	// Run GDS checks if --full flag is enabled
+	if full {
+		fmt.Println()
+		if err := runGDSChecks(); err != nil {
+			return fmt.Errorf("GDS checks failed: %w", err)
+		}
+	}
+
 	fmt.Println()
 	fmt.Println("🎉 Pre-flight checks completed successfully!")
 	fmt.Println()
@@ -787,7 +803,147 @@ func runHostPreFlight() error {
 	fmt.Println("  • Your system is ready for AMG setup")
 	fmt.Println("  • Run 'amgctl host setup' to install and configure AMG")
 	fmt.Println("  • Run 'amgctl host status' to check environment status")
+	
+	return nil
+}
 
+// runGDSChecks performs GPU Direct Storage checks using gdscheck
+func runGDSChecks() error {
+	fmt.Println("--- GPU Direct Storage (GDS) Checks ---")
+	
+	gdsCheckPath := "/usr/local/cuda/gds/tools/gdscheck"
+	
+	// Check if gdscheck tool exists
+	if _, err := os.Stat(gdsCheckPath); os.IsNotExist(err) {
+		return fmt.Errorf("gdscheck tool not found at %s. GPU Direct Storage may not be installed", gdsCheckPath)
+	}
+	
+	fmt.Printf("✅ Found gdscheck tool at %s\n", gdsCheckPath)
+	fmt.Println("Running GDS platform checks...")
+	
+	// Run gdscheck -p
+	cmd := exec.Command(gdsCheckPath, "-p")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to run gdscheck: %w", err)
+	}
+	
+	outputStr := string(output)
+	
+	// Parse and validate the output
+	if err := validateGDSOutput(outputStr); err != nil {
+		return err
+	}
+	
+	fmt.Println("✅ GDS checks completed successfully")
+	return nil
+}
+
+// validateGDSOutput parses gdscheck output and validates required components
+func validateGDSOutput(output string) error {
+	lines := strings.Split(output, "\n")
+	
+	// Track requirements
+	requirements := map[string]bool{
+		"nvme_supported":       false,
+		"wekafs_supported":     false,
+		"userspace_rdma_supported": false,
+		"mellanox_peerdirect_enabled": false,
+		"rdma_library_loaded":  false,
+		"rdma_devices_configured": false,
+		"iommu_disabled":       false,
+	}
+	
+	// Parse the output line by line
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		
+		// Check NVMe support
+		if strings.Contains(line, "NVMe") && strings.Contains(line, ": Supported") {
+			requirements["nvme_supported"] = true
+		}
+		
+		// Check WekaFS support
+		if strings.Contains(line, "WekaFS") && strings.Contains(line, ": Supported") {
+			requirements["wekafs_supported"] = true
+		}
+		
+		// Check Userspace RDMA support
+		if strings.Contains(line, "Userspace RDMA") && strings.Contains(line, ": Supported") {
+			requirements["userspace_rdma_supported"] = true
+		}
+		
+		// Check Mellanox PeerDirect
+		if strings.Contains(line, "--Mellanox PeerDirect") && strings.Contains(line, ": Enabled") {
+			requirements["mellanox_peerdirect_enabled"] = true
+		}
+		
+		// Check rdma library
+		if strings.Contains(line, "--rdma library") && strings.Contains(line, ": Loaded") {
+			requirements["rdma_library_loaded"] = true
+		}
+		
+		// Check rdma devices
+		if strings.Contains(line, "--rdma devices") && strings.Contains(line, ": Configured") {
+			requirements["rdma_devices_configured"] = true
+		}
+		
+		// Check IOMMU status
+		if strings.Contains(line, "IOMMU: disabled") {
+			requirements["iommu_disabled"] = true
+		}
+	}
+	
+	// Validate all requirements
+	var errors []string
+	
+	if !requirements["nvme_supported"] {
+		errors = append(errors, "NVMe is not supported")
+	} else {
+		fmt.Println("✅ NVMe: Supported")
+	}
+	
+	if !requirements["wekafs_supported"] {
+		errors = append(errors, "WekaFS is not supported")
+	} else {
+		fmt.Println("✅ WekaFS: Supported")
+	}
+	
+	if !requirements["userspace_rdma_supported"] {
+		errors = append(errors, "Userspace RDMA is not supported")
+	} else {
+		fmt.Println("✅ Userspace RDMA: Supported")
+	}
+	
+	if !requirements["mellanox_peerdirect_enabled"] {
+		errors = append(errors, "Mellanox PeerDirect is not enabled")
+	} else {
+		fmt.Println("✅ Mellanox PeerDirect: Enabled")
+	}
+	
+	if !requirements["rdma_library_loaded"] {
+		errors = append(errors, "RDMA library is not loaded")
+	} else {
+		fmt.Println("✅ RDMA library: Loaded")
+	}
+	
+	if !requirements["rdma_devices_configured"] {
+		errors = append(errors, "RDMA devices are not configured")
+	} else {
+		fmt.Println("✅ RDMA devices: Configured")
+	}
+	
+	if !requirements["iommu_disabled"] {
+		errors = append(errors, "IOMMU is not disabled (should be disabled for optimal GDS performance)")
+	} else {
+		fmt.Println("✅ IOMMU: Disabled")
+	}
+	
+	// Return combined errors if any
+	if len(errors) > 0 {
+		return fmt.Errorf("GDS validation failed:\n  • %s", strings.Join(errors, "\n  • "))
+	}
+	
 	return nil
 }
 
