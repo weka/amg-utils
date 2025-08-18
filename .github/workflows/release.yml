@@ -82,22 +82,28 @@ jobs:
           # Get the previous tag
           PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "$CURRENT_TAG" | head -n 1)
           
-          # If this is the first release, get all commits
-          if [ -z "$PREVIOUS_TAG" ]; then
-            echo "This appears to be the first release"
-            COMMITS=$(git log --oneline --pretty=format:"- %s" | head -20)
-          else
-            echo "Getting commits between $PREVIOUS_TAG and $CURRENT_TAG"
-            COMMITS=$(git log --oneline --pretty=format:"- %s" "${PREVIOUS_TAG}..${CURRENT_TAG}")
-          fi
+          echo "Current tag: $CURRENT_TAG"
+          echo "Previous tag: $PREVIOUS_TAG"
           
-          # Create release notes
-          cat << EOF > release_notes.md
+          # Create release notes header
+          cat > release_notes.md << EOF
           ## Changes in $CURRENT_TAG
           
           ### Release Notes
           
-          $COMMITS
+          EOF
+          
+          # Add commits directly to file (avoid variable expansion issues)
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "This appears to be the first release"
+            git log --oneline --pretty=format:"- %s" | head -20 >> release_notes.md
+          else
+            echo "Getting commits between $PREVIOUS_TAG and $CURRENT_TAG"
+            git log --oneline --pretty=format:"- %s" "${PREVIOUS_TAG}..${CURRENT_TAG}" >> release_notes.md
+          fi
+          
+          # Add installation instructions
+          cat >> release_notes.md << EOF
           
           ### Installation
           
@@ -117,6 +123,11 @@ jobs:
           
           All binaries include SHA256 checksums in \`checksums.txt\` for verification.
           EOF
+          
+          # Debug: show what we generated
+          echo "=== Generated release notes ==="
+          cat release_notes.md
+          echo "=== End release notes ==="
           
           # Set the release notes as output (escape newlines for GitHub Actions)
           {
