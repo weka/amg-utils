@@ -76,7 +76,6 @@ func init() {
 	hostCmd.AddCommand(hostPreFlightCmd)
 
 	// Add flags to hostSetupCmd
-	hostSetupCmd.Flags().Bool("skip-hotfixes", false, "Skip applying hotfixes like downgrading transformers")
 	hostSetupCmd.Flags().String("lmcache-repo", repoURL, "Alternative LMCache repository URL")
 	hostSetupCmd.Flags().String("lmcache-commit", "", "Specific commit hash for LMCache repository")
 	hostSetupCmd.Flags().String("lmcache-branch", defaultBranch, "Branch to follow for LMCache repository (overrides commit)")
@@ -108,7 +107,6 @@ type SetupState struct {
 	LMCacheCommit string `json:"lmcache_commit,omitempty"`
 	LMCacheBranch string `json:"lmcache_branch,omitempty"`
 	VLLMVersion   string `json:"vllm_version"`
-	SkipHotfixes  bool   `json:"skip_hotfixes"`
 }
 
 func getBasePath() string {
@@ -330,7 +328,6 @@ func runHostSetup(cmd *cobra.Command) error {
 	fmt.Println("🚀 Starting AMG environment setup...")
 
 	// Get flag values
-	skipHotfixes, _ := cmd.Flags().GetBool("skip-hotfixes")
 	lmcacheRepo, _ := cmd.Flags().GetString("lmcache-repo")
 	lmcacheCommit, _ := cmd.Flags().GetString("lmcache-commit")
 	lmcacheBranch, _ := cmd.Flags().GetString("lmcache-branch")
@@ -342,7 +339,6 @@ func runHostSetup(cmd *cobra.Command) error {
 		LMCacheCommit: lmcacheCommit,
 		LMCacheBranch: lmcacheBranch,
 		VLLMVersion:   vllmVersionFlag,
-		SkipHotfixes:  skipHotfixes,
 	}
 
 	// If branch is specified, clear commit to indicate we're following a branch
@@ -671,23 +667,6 @@ func installRepositoryDependencies(repoPath string, state *SetupState) error {
 		fmt.Println("✅ Repository installed in editable mode successfully")
 	}
 
-	// Apply hotfixes unless skipped
-	if !state.SkipHotfixes {
-		fmt.Println("Hot-patching transformers package...")
-		cmd = exec.Command("uv", "pip", "install", "--no-cache-dir", "transformers<4.54.0")
-		cmd.Dir = repoPath
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("⚠️ Warning: Failed to hot-patch transformers package: %v\n", err)
-		} else {
-			fmt.Println("✅ Downgraded transformers explicitly")
-		}
-	} else {
-		fmt.Println("🚫 Skipping hotfixes (transformers downgrade) as requested")
-	}
-
 	return nil
 }
 
@@ -830,11 +809,11 @@ func runGDSChecks() error {
 
 	outputStr := string(output)
 
-		// Parse and validate the output
+	// Parse and validate the output
 	if err := validateGDSOutput(outputStr); err != nil {
 		return err
 	}
-	
+
 	// Check for gdsio tool (warning only)
 	gdsioPath := "/usr/local/cuda/gds/tools/gdsio"
 	if _, err := os.Stat(gdsioPath); os.IsNotExist(err) {
@@ -842,7 +821,7 @@ func runGDSChecks() error {
 	} else {
 		fmt.Printf("✅ Found gdsio tool at %s\n", gdsioPath)
 	}
-	
+
 	fmt.Println("✅ GDS checks completed successfully")
 	return nil
 }

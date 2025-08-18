@@ -164,7 +164,7 @@ Set up the complete AMG environment including UV virtual environment, repository
 ./amgctl host setup --vllm-version 0.10.0
 
 # Other available flags
-./amgctl host setup --skip-hotfixes --vllm-version 0.9.1
+./amgctl host setup --vllm-version 0.9.1
 ```
 
 This command performs the following actions:
@@ -178,14 +178,13 @@ This command performs the following actions:
    - Checks out and tracks the `dev` branch by default
 5. **Dependencies**: Installs repository dependencies from requirements files (with --no-build-isolation)
 6. **Editable Install**: Installs the repository in editable mode (with --no-build-isolation)
-7. **Hot-patches**: Downgrades transformers package for compatibility
+
 
 #### Setup Command Options
 
 The `host setup` command supports several flags for customization:
 
 - `--vllm-version`: Specify vLLM version to install (default: "0.9.2")
-- `--skip-hotfixes`: Skip applying hotfixes like downgrading transformers
 - `--lmcache-repo`: Alternative LMCache repository URL
 - `--lmcache-commit`: Specific commit hash for LMCache repository
 - `--lmcache-branch`: Branch to follow for LMCache repository (overrides commit)
@@ -194,9 +193,6 @@ Examples:
 ```bash
 # Use different vLLM version
 ./amgctl host setup --vllm-version 0.10.0
-
-# Skip hotfixes and use custom vLLM version
-./amgctl host setup --skip-hotfixes --vllm-version 0.9.1
 
 # Use different repository branch
 ./amgctl host setup --lmcache-branch main --vllm-version 0.9.2
