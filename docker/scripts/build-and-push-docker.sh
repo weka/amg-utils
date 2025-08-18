@@ -32,7 +32,7 @@ show_usage() {
     echo "  DOCKERHUB_TOKEN     Docker Hub access token (required)"
     echo ""
     echo "Examples:"
-    echo "  $0 v0.1.9"
+    echo "  $0 v0.1.10"
     echo "  $0"
     echo ""
 }
