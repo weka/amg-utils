@@ -950,6 +950,13 @@ func runHostStatus(verbose bool) error {
 		fmt.Printf("❌ Error checking repository: %v\n", err)
 	}
 
+	fmt.Println() // Add spacing
+
+	// Show PyTorch configuration
+	if err := showPyTorchInfo(); err != nil {
+		fmt.Printf("❌ Error checking PyTorch configuration: %v\n", err)
+	}
+
 	// Show installed packages and system resources only in verbose mode
 	if verbose {
 		fmt.Println() // Add spacing
@@ -1056,6 +1063,87 @@ func runWindowsClear() error {
 	fmt.Println("  - Windows-specific cleanup")
 	fmt.Println("  - Registry cleanup if needed")
 	fmt.Println("  - UV virtual environment cleanup")
+	return nil
+}
+
+// showPyTorchInfo displays PyTorch version and supported backends for vLLM
+func showPyTorchInfo() error {
+	fmt.Println("🔥 PyTorch Configuration:")
+	fmt.Println("-" + strings.Repeat("-", 24))
+
+	basePath := getBasePath()
+
+	// Create a Python script to check PyTorch configuration
+	pythonScript := `
+import sys
+try:
+    import torch
+    print(f"PyTorch Version: {torch.__version__}")
+    
+    # Check CUDA support
+    if torch.cuda.is_available():
+        cuda_version = torch.version.cuda if hasattr(torch.version, 'cuda') else "unknown"
+        device_count = torch.cuda.device_count()
+        device_name = torch.cuda.get_device_name(0) if device_count > 0 else "unknown"
+        print(f"CUDA Available: Yes (version {cuda_version})")
+        print(f"CUDA Devices: {device_count}")
+        if device_count > 0:
+            print(f"Primary GPU: {device_name}")
+    else:
+        print("CUDA Available: No")
+    
+    # Check cuDNN support
+    if hasattr(torch.backends, 'cudnn') and torch.backends.cudnn.enabled:
+        print("cuDNN: Enabled")
+    else:
+        print("cuDNN: Disabled/Not available")
+    
+    # Check ROCm support (AMD GPUs)
+    if hasattr(torch.version, 'hip') and torch.version.hip is not None:
+        print(f"ROCm/HIP Available: Yes (version {torch.version.hip})")
+    else:
+        print("ROCm/HIP Available: No")
+    
+    # Check MPS support (Apple Silicon)
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        print("MPS (Apple Silicon): Available")
+    else:
+        print("MPS (Apple Silicon): Not available")
+    
+    # Check CPU-only mode
+    print(f"CPU Threads: {torch.get_num_threads()}")
+    
+except ImportError as e:
+    print(f"Error: PyTorch not available - {e}")
+    sys.exit(1)
+except Exception as e:
+    print(f"Error checking PyTorch configuration: {e}")
+    sys.exit(1)
+`
+
+	// Execute the Python script using uv run
+	cmd := exec.Command("uv", "run", "python", "-c", pythonScript)
+	cmd.Dir = basePath
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("❌ Could not retrieve PyTorch configuration: %v\n", err)
+		return nil
+	}
+
+	// Display the output
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Error:") {
+			fmt.Printf("❌ %s\n", line)
+		} else if strings.Contains(line, "Available: Yes") || strings.Contains(line, "Enabled") {
+			fmt.Printf("✅ %s\n", line)
+		} else if strings.Contains(line, "Available: No") || strings.Contains(line, "Disabled") || strings.Contains(line, "Not available") {
+			fmt.Printf("❌ %s\n", line)
+		} else {
+			fmt.Printf("ℹ️  %s\n", line)
+		}
+	}
+
 	return nil
 }
 
