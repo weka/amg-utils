@@ -72,6 +72,9 @@ RUN echo '#!/bin/bash' > /usr/local/bin/amg-vllm && \
     echo 'exec vllm "$@"' >> /usr/local/bin/amg-vllm && \
     chmod +x /usr/local/bin/amg-vllm
 
+# Create prometheus directory for LMCache (temporary until we replace amg-vllm with amgctl-host-launch)
+RUN mkdir -p /tmp/lmcache_prometheus
+
 # Activate uv environment on login
 RUN echo "source /root/amg_stable/.venv/bin/activate" >> /root/.bashrc
 
