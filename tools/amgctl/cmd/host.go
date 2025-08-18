@@ -78,7 +78,7 @@ func init() {
 	// Add flags to hostSetupCmd
 	hostSetupCmd.Flags().String("lmcache-repo", repoURL, "Alternative LMCache repository URL")
 	hostSetupCmd.Flags().String("lmcache-commit", "", "Specific commit hash for LMCache repository")
-	hostSetupCmd.Flags().String("lmcache-branch", defaultBranch, "Branch to follow for LMCache repository (overrides commit)")
+	hostSetupCmd.Flags().String("lmcache-branch", defaultRef, "Branch or tag to follow for LMCache repository (overrides commit)")
 	hostSetupCmd.Flags().String("vllm-version", vllmVersion, "vLLM version to install (e.g., 0.9.2, 0.10.0)")
 
 	// Add flags to hostStatusCmd
@@ -93,12 +93,12 @@ func init() {
 
 // Configuration constants
 const (
-	uvEnvName     = "amg_stable"
-	repoURL       = "https://github.com/LMCache/LMCache.git"
-	repoName      = "LMCache"
-	defaultBranch = "v0.3.3"
-	vllmVersion   = "0.10.0"
-	stateFile     = ".amg_setup_state.json"
+	uvEnvName   = "amg_stable"
+	repoURL     = "https://github.com/LMCache/LMCache.git"
+	repoName    = "LMCache"
+	defaultRef  = "v0.3.3" // Can be a tag or branch
+	vllmVersion = "0.10.0"
+	stateFile   = ".amg_setup_state.json"
 )
 
 // SetupState tracks the configuration used during setup
@@ -557,31 +557,68 @@ func setupRepository(state *SetupState) error {
 	return nil
 }
 
+// isTag checks if the given reference is a tag
+func isTag(repoPath, ref string) bool {
+	cmd := exec.Command("git", "-C", repoPath, "tag", "-l", ref)
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(output)) == ref
+}
+
+// isBranch checks if the given reference is a remote branch
+func isBranch(repoPath, ref string) bool {
+	cmd := exec.Command("git", "-C", repoPath, "ls-remote", "--heads", "origin", ref)
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(output)) != ""
+}
+
 func checkoutCommitOrBranch(repoPath string, state *SetupState) error {
 	fmt.Println("\n--- Git Checkout ---")
 
 	if state.LMCacheBranch != "" {
-		// Branch mode - checkout and track the branch
-		fmt.Printf("Checking out branch: %s...\n", state.LMCacheBranch)
-
-		// First, fetch all branches
-		cmd := exec.Command("git", "-C", repoPath, "fetch", "origin")
+		// First, fetch all references (branches and tags)
+		cmd := exec.Command("git", "-C", repoPath, "fetch", "origin", "--tags")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to fetch origin: %w", err)
 		}
 
-		// Checkout the branch
-		cmd = exec.Command("git", "-C", repoPath, "checkout", "-B", state.LMCacheBranch, "origin/"+state.LMCacheBranch)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		// Check if it's a tag or branch
+		if isTag(repoPath, state.LMCacheBranch) {
+			// Tag mode - checkout the tag directly
+			fmt.Printf("Checking out tag: %s...\n", state.LMCacheBranch)
 
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to checkout branch '%s': %w", state.LMCacheBranch, err)
+			cmd = exec.Command("git", "-C", repoPath, "checkout", state.LMCacheBranch)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("failed to checkout tag '%s': %w", state.LMCacheBranch, err)
+			}
+
+			fmt.Printf("✅ Successfully checked out tag: %s\n", state.LMCacheBranch)
+		} else if isBranch(repoPath, state.LMCacheBranch) {
+			// Branch mode - checkout and track the branch
+			fmt.Printf("Checking out branch: %s...\n", state.LMCacheBranch)
+
+			cmd = exec.Command("git", "-C", repoPath, "checkout", "-B", state.LMCacheBranch, "origin/"+state.LMCacheBranch)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("failed to checkout branch '%s': %w", state.LMCacheBranch, err)
+			}
+
+			fmt.Printf("✅ Successfully checked out and tracking branch: %s\n", state.LMCacheBranch)
+		} else {
+			return fmt.Errorf("reference '%s' is neither a valid tag nor a remote branch", state.LMCacheBranch)
 		}
-
-		fmt.Printf("✅ Successfully checked out and tracking branch: %s\n", state.LMCacheBranch)
 	} else if state.LMCacheCommit != "" {
 		// Commit mode - checkout specific commit
 		fmt.Printf("Checking out commit: %s...\n", state.LMCacheCommit)
