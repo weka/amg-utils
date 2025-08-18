@@ -94,10 +94,10 @@ func init() {
 // Configuration constants
 const (
 	uvEnvName     = "amg_stable"
-	repoURL       = "git@github.com:weka/weka-LMCache.git"
+	repoURL       = "https://github.com/LMCache/LMCache.git"
 	repoName      = "LMCache"
-	defaultBranch = "dev"
-	vllmVersion   = "0.9.2"
+	defaultBranch = "v0.3.3"
+	vllmVersion   = "0.10.0"
 	stateFile     = ".amg_setup_state.json"
 )
 
