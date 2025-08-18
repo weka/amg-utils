@@ -2,7 +2,7 @@
 
 # AMG Docker Image Build and Push Script
 # This script builds and pushes the AMG Docker image to Docker Hub
-# Usage: ./scripts/build-and-push-docker.sh [version]
+# Usage: ./docker/scripts/build-and-push-docker.sh [version]
 
 set -e
 
@@ -191,7 +191,7 @@ main() {
     
     # Change to repository root if not already there
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local repo_root="$(cd "$script_dir/.." && pwd)"
+    local repo_root="$(cd "$script_dir/../.." && pwd)"
     cd "$repo_root"
     
     print_info "Working directory: $(pwd)"

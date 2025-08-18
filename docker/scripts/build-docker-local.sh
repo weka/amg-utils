@@ -2,7 +2,7 @@
 
 # AMG Docker Image Local Build Script
 # This script builds the AMG Docker image locally for testing
-# Usage: ./scripts/build-docker-local.sh [version]
+# Usage: ./docker/scripts/build-docker-local.sh [version]
 
 set -e
 
@@ -123,7 +123,7 @@ main() {
     
     # Change to repository root if not already there
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local repo_root="$(cd "$script_dir/.." && pwd)"
+    local repo_root="$(cd "$script_dir/../.." && pwd)"
     cd "$repo_root"
     
     print_info "Working directory: $(pwd)"

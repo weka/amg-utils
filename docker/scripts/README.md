@@ -11,10 +11,10 @@ Builds Docker images locally for testing and development.
 **Usage:**
 ```bash
 # Build with 'dev' tag (default)
-./scripts/build-docker-local.sh
+./docker/scripts/build-docker-local.sh
 
 # Build with specific version
-./scripts/build-docker-local.sh v0.1.9
+./docker/scripts/build-docker-local.sh v0.1.9
 ```
 
 **Features:**
@@ -30,10 +30,10 @@ Builds and pushes Docker images to Docker Hub for production release.
 **Usage:**
 ```bash
 # Push current git tag
-./scripts/build-and-push-docker.sh
+./docker/scripts/build-and-push-docker.sh
 
 # Push specific version
-./scripts/build-and-push-docker.sh v0.1.9
+./docker/scripts/build-and-push-docker.sh v0.1.9
 ```
 
 **Prerequisites:**
@@ -66,7 +66,7 @@ export DOCKERHUB_TOKEN=your_access_token
 ### Development Workflow
 ```bash
 # Build and test locally
-./scripts/build-docker-local.sh
+./docker/scripts/build-docker-local.sh
 
 # Test the image
 docker run -it --rm --gpus all --runtime nvidia sdimitro509/amg:dev
@@ -74,7 +74,7 @@ docker run -it --rm --gpus all --runtime nvidia sdimitro509/amg:dev
 # When ready for release, tag and push
 git tag v0.1.9
 git push origin v0.1.9
-./scripts/build-and-push-docker.sh
+./docker/scripts/build-and-push-docker.sh
 ```
 
 ### Quick Release
@@ -84,7 +84,7 @@ export DOCKERHUB_USERNAME=sdimitro509
 export DOCKERHUB_TOKEN=your_token
 
 # Build and push latest tag
-./scripts/build-and-push-docker.sh
+./docker/scripts/build-and-push-docker.sh
 ```
 
 ## Migration from GitHub Actions
@@ -106,7 +106,7 @@ If you encounter issues with Docker Buildx, the script will fall back to regular
 ### Permission Issues
 Ensure the scripts are executable:
 ```bash
-chmod +x scripts/*.sh
+chmod +x docker/scripts/*.sh
 ```
 
 ### Network Issues
