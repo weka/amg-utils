@@ -466,5 +466,15 @@ func performPreflightChecks() error {
 		}
 	}
 
+	// Check if prometheus-multiproc-dir directory exists
+	prometheusDir := viper.GetString("prometheus-multiproc-dir")
+	if prometheusDir != "" {
+		if _, err := os.Stat(prometheusDir); os.IsNotExist(err) {
+			return fmt.Errorf("prometheus multiprocess directory '%s' does not exist. Please create the directory or specify a different --prometheus-multiproc-dir", prometheusDir)
+		} else if err != nil {
+			return fmt.Errorf("failed to access prometheus multiprocess directory '%s': %v", prometheusDir, err)
+		}
+	}
+
 	return nil
 }
