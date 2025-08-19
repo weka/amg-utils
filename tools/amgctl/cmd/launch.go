@@ -275,46 +275,46 @@ func buildHostLaunchCommand(modelIdentifier string, tensorParallelSize int) []st
 
 	// Add GPU memory utilization
 	gpuMemUtil := viper.GetFloat64("gpu-mem-util")
-	if gpuMemUtil != 0.8 { // Only add if different from default
+	if gpuMemUtil != DefaultGPUMemUtil {
 		hostCmd = append(hostCmd, "--gpu-mem-util", fmt.Sprintf("%.2f", gpuMemUtil))
 	}
 
 	// Add vLLM configuration flags
-	if maxSequences := viper.GetInt("max-sequences"); maxSequences != 256 {
+	if maxSequences := viper.GetInt("max-sequences"); maxSequences != DefaultMaxSequences {
 		hostCmd = append(hostCmd, "--max-sequences", strconv.Itoa(maxSequences))
 	}
 
-	if maxModelLen := viper.GetInt("max-model-len"); maxModelLen != 16384 {
+	if maxModelLen := viper.GetInt("max-model-len"); maxModelLen != DefaultMaxModelLen {
 		hostCmd = append(hostCmd, "--max-model-len", strconv.Itoa(maxModelLen))
 	}
 
-	if maxBatchedTokens := viper.GetInt("max-num-batched-tokens"); maxBatchedTokens != 16384 {
+	if maxBatchedTokens := viper.GetInt("max-num-batched-tokens"); maxBatchedTokens != DefaultMaxBatchedTokens {
 		hostCmd = append(hostCmd, "--max-num-batched-tokens", strconv.Itoa(maxBatchedTokens))
 	}
 
-	if port := viper.GetInt("port"); port != 8000 {
+	if port := viper.GetInt("port"); port != DefaultPort {
 		hostCmd = append(hostCmd, "--port", strconv.Itoa(port))
 	}
 
 	// Add Weka mount if different from default
-	if wekaMount := viper.GetString("weka-mount"); wekaMount != "/mnt/weka" {
+	if wekaMount := viper.GetString("weka-mount"); wekaMount != DefaultWekaMount {
 		hostCmd = append(hostCmd, "--weka-mount", wekaMount)
 	}
 
 	// Add LMCache configuration flags
-	if lmcachePath := viper.GetString("lmcache-path"); lmcachePath != "/mnt/weka/cache" {
+	if lmcachePath := viper.GetString("lmcache-path"); lmcachePath != DefaultLMCachePath {
 		hostCmd = append(hostCmd, "--lmcache-path", lmcachePath)
 	}
 
-	if lmcacheChunkSize := viper.GetInt("lmcache-chunk-size"); lmcacheChunkSize != 256 {
+	if lmcacheChunkSize := viper.GetInt("lmcache-chunk-size"); lmcacheChunkSize != DefaultLMCacheChunkSize {
 		hostCmd = append(hostCmd, "--lmcache-chunk-size", strconv.Itoa(lmcacheChunkSize))
 	}
 
-	if lmcacheGdsThreads := viper.GetInt("lmcache-gds-threads"); lmcacheGdsThreads != 32 {
+	if lmcacheGdsThreads := viper.GetInt("lmcache-gds-threads"); lmcacheGdsThreads != DefaultLMCacheGDSThreads {
 		hostCmd = append(hostCmd, "--lmcache-gds-threads", strconv.Itoa(lmcacheGdsThreads))
 	}
 
-	if lmcacheCufileBufferSize := viper.GetString("lmcache-cufile-buffer-size"); lmcacheCufileBufferSize != "8192" {
+	if lmcacheCufileBufferSize := viper.GetString("lmcache-cufile-buffer-size"); lmcacheCufileBufferSize != DefaultLMCacheCuFileBuffer {
 		hostCmd = append(hostCmd, "--lmcache-cufile-buffer-size", lmcacheCufileBufferSize)
 	}
 
@@ -327,12 +327,12 @@ func buildHostLaunchCommand(modelIdentifier string, tensorParallelSize int) []st
 	}
 
 	// Add Hugging Face configuration
-	if hfHome := viper.GetString("hf-home"); hfHome != "/mnt/weka/hf_cache" {
+	if hfHome := viper.GetString("hf-home"); hfHome != DefaultHFHome {
 		hostCmd = append(hostCmd, "--hf-home", hfHome)
 	}
 
 	// Add Prometheus configuration
-	if prometheusDir := viper.GetString("prometheus-multiproc-dir"); prometheusDir != "/tmp/lmcache_prometheus" {
+	if prometheusDir := viper.GetString("prometheus-multiproc-dir"); prometheusDir != DefaultPrometheusMultiprocDir {
 		hostCmd = append(hostCmd, "--prometheus-multiproc-dir", prometheusDir)
 	}
 
@@ -415,12 +415,12 @@ func init() {
 	dockerCmd.AddCommand(launchCmd)
 
 	// Add persistent flags for launch configuration
-	launchCmd.PersistentFlags().String("weka-mount", "/mnt/weka", "The Weka filesystem mount point on the host")
-	launchCmd.PersistentFlags().Float64("gpu-mem-util", 0.8, "GPU memory utilization for vLLM")
-	launchCmd.PersistentFlags().Int("max-sequences", 256, "The maximum number of sequences")
-	launchCmd.PersistentFlags().Int("max-model-len", 16384, "The maximum model length")
-	launchCmd.PersistentFlags().Int("max-num-batched-tokens", 16384, "The maximum number of batched tokens")
-	launchCmd.PersistentFlags().Int("port", 8000, "The port for the vLLM API server")
+	launchCmd.PersistentFlags().String("weka-mount", DefaultWekaMount, "The Weka filesystem mount point on the host")
+	launchCmd.PersistentFlags().Float64("gpu-mem-util", DefaultGPUMemUtil, "GPU memory utilization for vLLM")
+	launchCmd.PersistentFlags().Int("max-sequences", DefaultMaxSequences, "The maximum number of sequences")
+	launchCmd.PersistentFlags().Int("max-model-len", DefaultMaxModelLen, "The maximum model length")
+	launchCmd.PersistentFlags().Int("max-num-batched-tokens", DefaultMaxBatchedTokens, "The maximum number of batched tokens")
+	launchCmd.PersistentFlags().Int("port", DefaultPort, "The port for the vLLM API server")
 
 	// Add GPU allocation flags
 	launchCmd.PersistentFlags().String("gpu-slots", "", "Comma-separated list of GPU IDs to use (e.g., '0,1,2,3')")
@@ -431,18 +431,18 @@ func init() {
 	launchCmd.PersistentFlags().Bool("dry-run", false, "Print the Docker command that would be executed without actually running it")
 
 	// Add LMCache configuration flags
-	launchCmd.PersistentFlags().String("lmcache-path", "/mnt/weka/cache", "Path for the cache within the Weka mount")
-	launchCmd.PersistentFlags().Int("lmcache-chunk-size", 256, "LMCache chunk size")
-	launchCmd.PersistentFlags().Int("lmcache-gds-threads", 32, "LMCache GDS threads")
-	launchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", "8192", "LMCache cuFile buffer size")
+	launchCmd.PersistentFlags().String("lmcache-path", DefaultLMCachePath, "Path for the cache within the Weka mount")
+	launchCmd.PersistentFlags().Int("lmcache-chunk-size", DefaultLMCacheChunkSize, "LMCache chunk size")
+	launchCmd.PersistentFlags().Int("lmcache-gds-threads", DefaultLMCacheGDSThreads, "LMCache GDS threads")
+	launchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", DefaultLMCacheCuFileBuffer, "LMCache cuFile buffer size")
 	launchCmd.PersistentFlags().Bool("lmcache-local-cpu", false, "Enable LMCache local CPU processing")
-	launchCmd.PersistentFlags().Bool("lmcache-save-decode-cache", true, "Enable LMCache decode cache saving")
+	launchCmd.PersistentFlags().Bool("lmcache-save-decode-cache", DefaultLMCacheSaveDecodeCache, "Enable LMCache decode cache saving")
 
 	// Add Hugging Face configuration flags
-	launchCmd.PersistentFlags().String("hf-home", "/mnt/weka/hf_cache", "Hugging Face cache directory path")
+	launchCmd.PersistentFlags().String("hf-home", DefaultHFHome, "Hugging Face cache directory path")
 
 	// Add Prometheus configuration flags
-	launchCmd.PersistentFlags().String("prometheus-multiproc-dir", "/tmp/lmcache_prometheus", "Prometheus multiprocess directory path")
+	launchCmd.PersistentFlags().String("prometheus-multiproc-dir", DefaultPrometheusMultiprocDir, "Prometheus multiprocess directory path")
 
 	// Add vLLM configuration flags
 	launchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")

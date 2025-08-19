@@ -124,12 +124,12 @@ func init() {
 	hostClearCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt and proceed with deletion")
 
 	// Add flags to hostLaunchCmd (similar to docker launch but without docker-specific flags)
-	hostLaunchCmd.PersistentFlags().String("weka-mount", "/mnt/weka", "The Weka filesystem mount point on the host")
-	hostLaunchCmd.PersistentFlags().Float64("gpu-mem-util", 0.8, "GPU memory utilization for vLLM")
-	hostLaunchCmd.PersistentFlags().Int("max-sequences", 256, "The maximum number of sequences")
-	hostLaunchCmd.PersistentFlags().Int("max-model-len", 16384, "The maximum model length")
-	hostLaunchCmd.PersistentFlags().Int("max-num-batched-tokens", 16384, "The maximum number of batched tokens")
-	hostLaunchCmd.PersistentFlags().Int("port", 8000, "The port for the vLLM API server")
+	hostLaunchCmd.PersistentFlags().String("weka-mount", DefaultWekaMount, "The Weka filesystem mount point on the host")
+	hostLaunchCmd.PersistentFlags().Float64("gpu-mem-util", DefaultGPUMemUtil, "GPU memory utilization for vLLM")
+	hostLaunchCmd.PersistentFlags().Int("max-sequences", DefaultMaxSequences, "The maximum number of sequences")
+	hostLaunchCmd.PersistentFlags().Int("max-model-len", DefaultMaxModelLen, "The maximum model length")
+	hostLaunchCmd.PersistentFlags().Int("max-num-batched-tokens", DefaultMaxBatchedTokens, "The maximum number of batched tokens")
+	hostLaunchCmd.PersistentFlags().Int("port", DefaultPort, "The port for the vLLM API server")
 
 	// Add GPU allocation flags
 	hostLaunchCmd.PersistentFlags().String("gpu-slots", "", "Comma-separated list of GPU IDs to use (e.g., '0,1,2,3')")
@@ -139,18 +139,18 @@ func init() {
 	hostLaunchCmd.PersistentFlags().Bool("dry-run", false, "Print the vLLM command that would be executed without actually running it")
 
 	// Add LMCache configuration flags
-	hostLaunchCmd.PersistentFlags().String("lmcache-path", "/mnt/weka/cache", "Path for the cache within the Weka mount")
-	hostLaunchCmd.PersistentFlags().Int("lmcache-chunk-size", 256, "LMCache chunk size")
-	hostLaunchCmd.PersistentFlags().Int("lmcache-gds-threads", 32, "LMCache GDS threads")
-	hostLaunchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", "8192", "LMCache cuFile buffer size")
+	hostLaunchCmd.PersistentFlags().String("lmcache-path", DefaultLMCachePath, "Path for the cache within the Weka mount")
+	hostLaunchCmd.PersistentFlags().Int("lmcache-chunk-size", DefaultLMCacheChunkSize, "LMCache chunk size")
+	hostLaunchCmd.PersistentFlags().Int("lmcache-gds-threads", DefaultLMCacheGDSThreads, "LMCache GDS threads")
+	hostLaunchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", DefaultLMCacheCuFileBuffer, "LMCache cuFile buffer size")
 	hostLaunchCmd.PersistentFlags().Bool("lmcache-local-cpu", false, "Enable LMCache local CPU processing")
-	hostLaunchCmd.PersistentFlags().Bool("lmcache-save-decode-cache", true, "Enable LMCache decode cache saving")
+	hostLaunchCmd.PersistentFlags().Bool("lmcache-save-decode-cache", DefaultLMCacheSaveDecodeCache, "Enable LMCache decode cache saving")
 
 	// Add Hugging Face configuration flags
-	hostLaunchCmd.PersistentFlags().String("hf-home", "/mnt/weka/hf_cache", "Hugging Face cache directory path")
+	hostLaunchCmd.PersistentFlags().String("hf-home", DefaultHFHome, "Hugging Face cache directory path")
 
 	// Add Prometheus configuration flags
-	hostLaunchCmd.PersistentFlags().String("prometheus-multiproc-dir", "/tmp/lmcache_prometheus", "Prometheus multiprocess directory path")
+	hostLaunchCmd.PersistentFlags().String("prometheus-multiproc-dir", DefaultPrometheusMultiprocDir, "Prometheus multiprocess directory path")
 
 	// Add vLLM configuration flags
 	hostLaunchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
