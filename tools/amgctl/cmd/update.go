@@ -33,7 +33,6 @@ type GitHubRelease struct {
 
 func init() {
 	updateCmd.Flags().BoolP("force", "f", false, "Force update even if the version is the same")
-	rootCmd.AddCommand(updateCmd)
 }
 
 // Update check for a new version on GitHub and self-update
