@@ -97,7 +97,7 @@ Examples:
 	SilenceUsage: true, // Don't show help when vLLM execution fails
 	RunE: func(cmd *cobra.Command, args []string) error {
 		modelIdentifier := args[0]
-		return runHostLaunch(cmd, modelIdentifier)
+		return runHostLaunch(modelIdentifier)
 	},
 }
 
@@ -1647,10 +1647,10 @@ func showRepositoryStatus() error {
 }
 
 // runHostLaunch launches vLLM locally on the host
-func runHostLaunch(cmd *cobra.Command, modelIdentifier string) error {
+func runHostLaunch(modelIdentifier string) error {
 	// Check if dry-run mode is enabled (we need this early for pre-flight checks)
 	dryRun := viper.GetBool("dry-run")
-	
+
 	// Perform pre-flight checks
 	if err := performHostPreflightChecks(dryRun); err != nil {
 		return err
