@@ -1648,8 +1648,11 @@ func showRepositoryStatus() error {
 
 // runHostLaunch launches vLLM locally on the host
 func runHostLaunch(cmd *cobra.Command, modelIdentifier string) error {
+	// Check if dry-run mode is enabled (we need this early for pre-flight checks)
+	dryRun := viper.GetBool("dry-run")
+	
 	// Perform pre-flight checks
-	if err := performHostPreflightChecks(); err != nil {
+	if err := performHostPreflightChecks(dryRun); err != nil {
 		return err
 	}
 
@@ -1743,9 +1746,6 @@ func runHostLaunch(cmd *cobra.Command, modelIdentifier string) error {
 		return fmt.Errorf("failed to setup environment variables: %v", err)
 	}
 
-	// Check if dry-run mode is enabled
-	dryRun := viper.GetBool("dry-run")
-
 	if dryRun {
 		// Dry-run mode: display the command and environment variables
 		fmt.Println("\n🔍 Dry Run Mode - vLLM Command Preview:")
@@ -1766,7 +1766,7 @@ func runHostLaunch(cmd *cobra.Command, modelIdentifier string) error {
 }
 
 // performHostPreflightChecks validates host environment requirements before execution
-func performHostPreflightChecks() error {
+func performHostPreflightChecks(dryRun bool) error {
 	fmt.Println("--- Host Pre-flight Checks ---")
 
 	// Check that conda is not active
@@ -1822,16 +1822,26 @@ func performHostPreflightChecks() error {
 	}
 	fmt.Println("✅ Hugging Face cache directory accessible")
 
-	// Check if prometheus-multiproc-dir directory exists
+	// Check if prometheus-multiproc-dir directory exists and create it if needed
 	prometheusDir := viper.GetString("prometheus-multiproc-dir")
 	if prometheusDir != "" {
 		if _, err := os.Stat(prometheusDir); os.IsNotExist(err) {
-			return fmt.Errorf("prometheus multiprocess directory '%s' does not exist. Please create the directory or specify a different --prometheus-multiproc-dir", prometheusDir)
+			// Directory doesn't exist - create it if we're not in dry-run mode
+			if !dryRun {
+				if err := os.MkdirAll(prometheusDir, 0755); err != nil {
+					return fmt.Errorf("failed to create prometheus multiprocess directory '%s': %v", prometheusDir, err)
+				}
+				fmt.Printf("✅ Created prometheus multiprocess directory: %s\n", prometheusDir)
+			}
+			// If in dry-run mode or after successful creation, don't print anything else
 		} else if err != nil {
+			// Directory exists but we can't access it - this is an error
 			return fmt.Errorf("failed to access prometheus multiprocess directory '%s': %v", prometheusDir, err)
+		} else {
+			// Directory exists and is accessible - only print success message if it was already there
+			fmt.Println("✅ Prometheus multiprocess directory accessible")
 		}
 	}
-	fmt.Println("✅ Prometheus multiprocess directory accessible")
 
 	fmt.Println("✅ Host pre-flight checks completed")
 	return nil
