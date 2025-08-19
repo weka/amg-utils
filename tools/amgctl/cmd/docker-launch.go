@@ -12,7 +12,7 @@ import (
 	"github.com/weka/amg-utils/tools/amgctl/internal/hardware"
 )
 
-var launchCmd = &cobra.Command{
+var dockerLaunchCmd = &cobra.Command{
 	Use:   "launch <model_identifier>",
 	Short: "Launch an AMG container with the specified model",
 	Long: `Launch an AMG container with specified configurations for the given model.
@@ -40,7 +40,7 @@ Examples:
 		modelIdentifier := args[0]
 
 		// Perform pre-flight checks
-		if err := performPreflightChecks(); err != nil {
+		if err := performDockerPreflightChecks(); err != nil {
 			return err
 		}
 
@@ -131,7 +131,7 @@ Examples:
 		}
 
 		// Generate the Docker command
-		dockerCmd, err := generateHostLaunchCommand(
+		dockerCmd, err := generateDockerHostLaunchCommand(
 			cmd,
 			modelIdentifier,
 			cudaVisibleDevices,
@@ -156,12 +156,12 @@ Examples:
 
 		// Normal mode: execute the command
 		fmt.Println("\n🚀 Executing Docker Command...")
-		return executeDockerCommand(dockerCmd)
+		return executeDockerLaunchCommand(dockerCmd)
 	},
 }
 
 // generateHostLaunchCommand assembles the complete amgctl host launch command as a slice of strings
-func generateHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier, cudaVisibleDevices string, tensorParallelSize int, ibFlags string) ([]string, error) {
+func generateDockerHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier, cudaVisibleDevices string, tensorParallelSize int, ibFlags string) ([]string, error) {
 	var cmd []string
 
 	// Static parts: docker run with basic options
@@ -253,14 +253,14 @@ func generateHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier, cudaVis
 	cmd = append(cmd, dockerImage)
 
 	// amgctl host launch command with all relevant flags
-	hostLaunchCmd := buildHostLaunchCommand(cobraCmd, modelIdentifier, tensorParallelSize)
+	hostLaunchCmd := buildDockerHostLaunchCommand(cobraCmd, modelIdentifier, tensorParallelSize)
 	cmd = append(cmd, hostLaunchCmd...)
 
 	return cmd, nil
 }
 
 // buildHostLaunchCommand constructs the amgctl host launch command with all relevant flags
-func buildHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier string, tensorParallelSize int) []string {
+func buildDockerHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier string, tensorParallelSize int) []string {
 	var hostCmd []string
 
 	// Use amgctl host launch command
@@ -385,7 +385,7 @@ func buildHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier string, ten
 }
 
 // executeDockerCommand executes the Docker command with real-time output streaming
-func executeDockerCommand(dockerCmd []string) error {
+func executeDockerLaunchCommand(dockerCmd []string) error {
 	if len(dockerCmd) == 0 {
 		return fmt.Errorf("docker command is empty")
 	}
@@ -429,79 +429,79 @@ func executeDockerCommand(dockerCmd []string) error {
 }
 
 func init() {
-	dockerCmd.AddCommand(launchCmd)
+	dockerCmd.AddCommand(dockerLaunchCmd)
 
 	// Add persistent flags for launch configuration
 	// Note: No default values - these are passed through to 'amgctl host launch' which defines the defaults
-	launchCmd.PersistentFlags().String("weka-mount", "", "The Weka filesystem mount point on the host")
-	launchCmd.PersistentFlags().Float64("gpu-mem-util", 0, "GPU memory utilization for vLLM")
-	launchCmd.PersistentFlags().Int("max-sequences", 0, "The maximum number of sequences")
-	launchCmd.PersistentFlags().Int("max-model-len", 0, "The maximum model length")
-	launchCmd.PersistentFlags().Int("max-num-batched-tokens", 0, "The maximum number of batched tokens")
-	launchCmd.PersistentFlags().Int("port", 0, "The port for the vLLM API server")
+	dockerLaunchCmd.PersistentFlags().String("weka-mount", "", "The Weka filesystem mount point on the host")
+	dockerLaunchCmd.PersistentFlags().Float64("gpu-mem-util", 0, "GPU memory utilization for vLLM")
+	dockerLaunchCmd.PersistentFlags().Int("max-sequences", 0, "The maximum number of sequences")
+	dockerLaunchCmd.PersistentFlags().Int("max-model-len", 0, "The maximum model length")
+	dockerLaunchCmd.PersistentFlags().Int("max-num-batched-tokens", 0, "The maximum number of batched tokens")
+	dockerLaunchCmd.PersistentFlags().Int("port", 0, "The port for the vLLM API server")
 
 	// Add GPU allocation flags
-	launchCmd.PersistentFlags().String("gpu-slots", "", "Comma-separated list of GPU IDs to use (e.g., '0,1,2,3')")
-	launchCmd.PersistentFlags().Int("tensor-parallel-size", 0, "Number of GPUs to use for tensor parallelism (used when --gpu-slots is not specified)")
+	dockerLaunchCmd.PersistentFlags().String("gpu-slots", "", "Comma-separated list of GPU IDs to use (e.g., '0,1,2,3')")
+	dockerLaunchCmd.PersistentFlags().Int("tensor-parallel-size", 0, "Number of GPUs to use for tensor parallelism (used when --gpu-slots is not specified)")
 
 	// Add Docker configuration flags
-	launchCmd.PersistentFlags().String("docker-image", "", "Docker image to use for the vLLM container (defaults to sdimitro509/amg:v<amgctl-version>, auto-pulled if needed)")
-	launchCmd.PersistentFlags().Bool("dry-run", false, "Print the Docker command that would be executed without actually running it")
+	dockerLaunchCmd.PersistentFlags().String("docker-image", "", "Docker image to use for the vLLM container (defaults to sdimitro509/amg:v<amgctl-version>, auto-pulled if needed)")
+	dockerLaunchCmd.PersistentFlags().Bool("dry-run", false, "Print the Docker command that would be executed without actually running it")
 
 	// Add LMCache configuration flags
 	// Note: No default values - these are passed through to 'amgctl host launch' which defines the defaults
-	launchCmd.PersistentFlags().String("lmcache-path", "", "Path for the cache within the Weka mount")
-	launchCmd.PersistentFlags().Int("lmcache-chunk-size", 0, "LMCache chunk size")
-	launchCmd.PersistentFlags().Int("lmcache-gds-threads", 0, "LMCache GDS threads")
-	launchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", "", "LMCache cuFile buffer size")
-	launchCmd.PersistentFlags().Bool("lmcache-local-cpu", false, "Enable LMCache local CPU processing")
-	launchCmd.PersistentFlags().Bool("lmcache-save-decode-cache", false, "Enable LMCache decode cache saving")
+	dockerLaunchCmd.PersistentFlags().String("lmcache-path", "", "Path for the cache within the Weka mount")
+	dockerLaunchCmd.PersistentFlags().Int("lmcache-chunk-size", 0, "LMCache chunk size")
+	dockerLaunchCmd.PersistentFlags().Int("lmcache-gds-threads", 0, "LMCache GDS threads")
+	dockerLaunchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", "", "LMCache cuFile buffer size")
+	dockerLaunchCmd.PersistentFlags().Bool("lmcache-local-cpu", false, "Enable LMCache local CPU processing")
+	dockerLaunchCmd.PersistentFlags().Bool("lmcache-save-decode-cache", false, "Enable LMCache decode cache saving")
 
 	// Add Hugging Face configuration flags
-	launchCmd.PersistentFlags().String("hf-home", "", "Hugging Face cache directory path")
+	dockerLaunchCmd.PersistentFlags().String("hf-home", "", "Hugging Face cache directory path")
 
 	// Add Prometheus configuration flags
-	launchCmd.PersistentFlags().String("prometheus-multiproc-dir", "", "Prometheus multiprocess directory path")
+	dockerLaunchCmd.PersistentFlags().String("prometheus-multiproc-dir", "", "Prometheus multiprocess directory path")
 
 	// Add vLLM configuration flags
-	launchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
-	launchCmd.PersistentFlags().Bool("skip-safefasttensors", false, "Skip adding USE_FASTSAFETENSOR=true env var and --load-format fastsafetensors argument")
+	dockerLaunchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
+	dockerLaunchCmd.PersistentFlags().Bool("skip-safefasttensors", false, "Skip adding USE_FASTSAFETENSOR=true env var and --load-format fastsafetensors argument")
 
 	// Add escape hatch flags for advanced customization
-	launchCmd.PersistentFlags().StringSlice("docker-arg", []string{}, "Additional arguments to pass to docker run command (repeatable)")
-	launchCmd.PersistentFlags().StringSlice("vllm-arg", []string{}, "Additional arguments to pass to vllm serve command (repeatable)")
-	launchCmd.PersistentFlags().StringSlice("vllm-env", []string{}, "Additional environment variables for vllm container in KEY=VALUE format (repeatable)")
+	dockerLaunchCmd.PersistentFlags().StringSlice("docker-arg", []string{}, "Additional arguments to pass to docker run command (repeatable)")
+	dockerLaunchCmd.PersistentFlags().StringSlice("vllm-arg", []string{}, "Additional arguments to pass to vllm serve command (repeatable)")
+	dockerLaunchCmd.PersistentFlags().StringSlice("vllm-env", []string{}, "Additional environment variables for vllm container in KEY=VALUE format (repeatable)")
 
 	// Bind flags to Viper for configuration management
 	// Note: viper.BindPFlag errors are typically only due to programming errors (nil flags)
 	// and are safe to ignore in this context as flags are defined above
-	_ = viper.BindPFlag("weka-mount", launchCmd.PersistentFlags().Lookup("weka-mount"))
-	_ = viper.BindPFlag("gpu-mem-util", launchCmd.PersistentFlags().Lookup("gpu-mem-util"))
-	_ = viper.BindPFlag("max-sequences", launchCmd.PersistentFlags().Lookup("max-sequences"))
-	_ = viper.BindPFlag("max-model-len", launchCmd.PersistentFlags().Lookup("max-model-len"))
-	_ = viper.BindPFlag("max-num-batched-tokens", launchCmd.PersistentFlags().Lookup("max-num-batched-tokens"))
-	_ = viper.BindPFlag("port", launchCmd.PersistentFlags().Lookup("port"))
-	_ = viper.BindPFlag("gpu-slots", launchCmd.PersistentFlags().Lookup("gpu-slots"))
-	_ = viper.BindPFlag("tensor-parallel-size", launchCmd.PersistentFlags().Lookup("tensor-parallel-size"))
-	_ = viper.BindPFlag("docker-image", launchCmd.PersistentFlags().Lookup("docker-image"))
-	_ = viper.BindPFlag("dry-run", launchCmd.PersistentFlags().Lookup("dry-run"))
-	_ = viper.BindPFlag("lmcache-path", launchCmd.PersistentFlags().Lookup("lmcache-path"))
-	_ = viper.BindPFlag("lmcache-chunk-size", launchCmd.PersistentFlags().Lookup("lmcache-chunk-size"))
-	_ = viper.BindPFlag("lmcache-gds-threads", launchCmd.PersistentFlags().Lookup("lmcache-gds-threads"))
-	_ = viper.BindPFlag("lmcache-cufile-buffer-size", launchCmd.PersistentFlags().Lookup("lmcache-cufile-buffer-size"))
-	_ = viper.BindPFlag("lmcache-local-cpu", launchCmd.PersistentFlags().Lookup("lmcache-local-cpu"))
-	_ = viper.BindPFlag("lmcache-save-decode-cache", launchCmd.PersistentFlags().Lookup("lmcache-save-decode-cache"))
-	_ = viper.BindPFlag("hf-home", launchCmd.PersistentFlags().Lookup("hf-home"))
-	_ = viper.BindPFlag("prometheus-multiproc-dir", launchCmd.PersistentFlags().Lookup("prometheus-multiproc-dir"))
-	_ = viper.BindPFlag("no-enable-prefix-caching", launchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
-	_ = viper.BindPFlag("skip-safefasttensors", launchCmd.PersistentFlags().Lookup("skip-safefasttensors"))
-	_ = viper.BindPFlag("docker-arg", launchCmd.PersistentFlags().Lookup("docker-arg"))
-	_ = viper.BindPFlag("vllm-arg", launchCmd.PersistentFlags().Lookup("vllm-arg"))
-	_ = viper.BindPFlag("vllm-env", launchCmd.PersistentFlags().Lookup("vllm-env"))
+	_ = viper.BindPFlag("weka-mount", dockerLaunchCmd.PersistentFlags().Lookup("weka-mount"))
+	_ = viper.BindPFlag("gpu-mem-util", dockerLaunchCmd.PersistentFlags().Lookup("gpu-mem-util"))
+	_ = viper.BindPFlag("max-sequences", dockerLaunchCmd.PersistentFlags().Lookup("max-sequences"))
+	_ = viper.BindPFlag("max-model-len", dockerLaunchCmd.PersistentFlags().Lookup("max-model-len"))
+	_ = viper.BindPFlag("max-num-batched-tokens", dockerLaunchCmd.PersistentFlags().Lookup("max-num-batched-tokens"))
+	_ = viper.BindPFlag("port", dockerLaunchCmd.PersistentFlags().Lookup("port"))
+	_ = viper.BindPFlag("gpu-slots", dockerLaunchCmd.PersistentFlags().Lookup("gpu-slots"))
+	_ = viper.BindPFlag("tensor-parallel-size", dockerLaunchCmd.PersistentFlags().Lookup("tensor-parallel-size"))
+	_ = viper.BindPFlag("docker-image", dockerLaunchCmd.PersistentFlags().Lookup("docker-image"))
+	_ = viper.BindPFlag("dry-run", dockerLaunchCmd.PersistentFlags().Lookup("dry-run"))
+	_ = viper.BindPFlag("lmcache-path", dockerLaunchCmd.PersistentFlags().Lookup("lmcache-path"))
+	_ = viper.BindPFlag("lmcache-chunk-size", dockerLaunchCmd.PersistentFlags().Lookup("lmcache-chunk-size"))
+	_ = viper.BindPFlag("lmcache-gds-threads", dockerLaunchCmd.PersistentFlags().Lookup("lmcache-gds-threads"))
+	_ = viper.BindPFlag("lmcache-cufile-buffer-size", dockerLaunchCmd.PersistentFlags().Lookup("lmcache-cufile-buffer-size"))
+	_ = viper.BindPFlag("lmcache-local-cpu", dockerLaunchCmd.PersistentFlags().Lookup("lmcache-local-cpu"))
+	_ = viper.BindPFlag("lmcache-save-decode-cache", dockerLaunchCmd.PersistentFlags().Lookup("lmcache-save-decode-cache"))
+	_ = viper.BindPFlag("hf-home", dockerLaunchCmd.PersistentFlags().Lookup("hf-home"))
+	_ = viper.BindPFlag("prometheus-multiproc-dir", dockerLaunchCmd.PersistentFlags().Lookup("prometheus-multiproc-dir"))
+	_ = viper.BindPFlag("no-enable-prefix-caching", dockerLaunchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
+	_ = viper.BindPFlag("skip-safefasttensors", dockerLaunchCmd.PersistentFlags().Lookup("skip-safefasttensors"))
+	_ = viper.BindPFlag("docker-arg", dockerLaunchCmd.PersistentFlags().Lookup("docker-arg"))
+	_ = viper.BindPFlag("vllm-arg", dockerLaunchCmd.PersistentFlags().Lookup("vllm-arg"))
+	_ = viper.BindPFlag("vllm-env", dockerLaunchCmd.PersistentFlags().Lookup("vllm-env"))
 }
 
 // performPreflightChecks validates system requirements and configuration before execution
-func performPreflightChecks() error {
+func performDockerPreflightChecks() error {
 	// Check if docker command exists in PATH
 	if _, err := exec.LookPath("docker"); err != nil {
 		return fmt.Errorf("docker command not found in PATH. Please install Docker and ensure it's available in your system PATH")
