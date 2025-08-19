@@ -58,9 +58,6 @@ RUN wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION
 # The amgctl binary now automatically detects CUDA version and uses appropriate PyTorch index
 RUN amgctl host setup
 
-# Create prometheus directory for LMCache
-RUN mkdir -p /tmp/lmcache_prometheus
-
 # Activate uv environment on login
 RUN echo "source /root/amg_stable/.venv/bin/activate" >> /root/.bashrc
 
