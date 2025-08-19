@@ -143,7 +143,7 @@ Examples:
 		}
 
 		// Check if dry-run mode is enabled
-		dryRun := viper.GetBool("dry-run")
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 		if dryRun {
 			// Dry-run mode: display the command and exit
