@@ -34,6 +34,12 @@ func Execute() {
 		if err.Error() == `unknown command "status" for "amgctl"` {
 			fmt.Fprintf(os.Stderr, "\nDid you mean:\n  amgctl host status\n")
 		}
+		if err.Error() == `unknown command "launch" for "amgctl"` {
+			fmt.Fprintf(os.Stderr, "\nDid you mean one of:\n  amgctl docker launch <model>\n  amgctl host launch <model>\n")
+		}
+		if err.Error() == `unknown command "pre-flight" for "amgctl"` {
+			fmt.Fprintf(os.Stderr, "\nDid you mean one of:\n  amgctl host pre-flight\n  amgctl k8s pre-flight\n")
+		}
 
 		fmt.Fprintf(os.Stderr, "\nRun 'amgctl --help' for usage.\n")
 		os.Exit(1)
