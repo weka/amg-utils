@@ -117,7 +117,6 @@ func GetInfinibandDeviceInfo() ([]string, error) {
 		}
 	}
 
-	// Check for actual device files
 	deviceInfo = append(deviceInfo, "Available device files:")
 	deviceDirs := []string{"/dev/infiniband"}
 

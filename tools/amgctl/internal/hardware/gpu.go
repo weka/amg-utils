@@ -10,7 +10,6 @@ import (
 // It initializes the NVML library, queries the device count, and properly shuts down the library.
 // Returns the GPU count and any error encountered during the process.
 func GetGpuCount() (int, error) {
-	// Initialize the NVML library
 	ret := nvml.Init()
 	if ret != nvml.SUCCESS {
 		return 0, fmt.Errorf("failed to initialize NVML: %v", nvml.ErrorString(ret))
@@ -24,7 +23,6 @@ func GetGpuCount() (int, error) {
 		}
 	}()
 
-	// Get the number of NVIDIA devices
 	count, ret := nvml.DeviceGetCount()
 	if ret != nvml.SUCCESS {
 		return 0, fmt.Errorf("failed to get device count: %v", nvml.ErrorString(ret))
@@ -45,7 +43,6 @@ func GetGpuInfo() ([]string, error) {
 		return []string{}, nil
 	}
 
-	// Initialize NVML again for device info queries
 	ret := nvml.Init()
 	if ret != nvml.SUCCESS {
 		return nil, fmt.Errorf("failed to initialize NVML: %v", nvml.ErrorString(ret))

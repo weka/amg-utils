@@ -120,13 +120,11 @@ func getLatestVersion(prerelease bool) (string, string, error) {
 }
 
 func downloadAndInstall(url string) error {
-	// Get the current executable path
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("could not get executable path: %w", err)
 	}
 
-	// Create a temporary file
 	tmpFile, err := os.CreateTemp("", "amgctl-update-")
 	if err != nil {
 		return fmt.Errorf("could not create temporary file: %w", err)
@@ -138,7 +136,6 @@ func downloadAndInstall(url string) error {
 		}
 	}()
 
-	// Download the new executable
 	resp, err := http.Get(url)
 	if err != nil {
 		return fmt.Errorf("could not download new version: %w", err)
@@ -163,7 +160,6 @@ func downloadAndInstall(url string) error {
 	// Store the temp file name before closing
 	tmpFileName := tmpFile.Name()
 
-	// Close the file so it can be renamed
 	if err := tmpFile.Close(); err != nil {
 		return fmt.Errorf("could not close temporary file: %w", err)
 	}

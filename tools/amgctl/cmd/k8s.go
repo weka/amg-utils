@@ -71,7 +71,6 @@ func runK8sPreFlight(singleNode bool) error {
 	var missingRequired []string
 	var missingOptional []string
 
-	// Check required tools
 	for _, tool := range requiredTools {
 		if !isCommandAvailable(tool) {
 			missingRequired = append(missingRequired, tool)
@@ -81,7 +80,6 @@ func runK8sPreFlight(singleNode bool) error {
 		}
 	}
 
-	// Check optional tools
 	for _, tool := range optionalTools {
 		if !isCommandAvailable(tool) {
 			missingOptional = append(missingOptional, tool)

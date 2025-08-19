@@ -51,7 +51,6 @@ Examples:
 		var finalTensorParallelSize int
 
 		if gpuSlots != "" {
-			// Parse comma-separated GPU slots
 			gpuIDs := strings.Split(gpuSlots, ",")
 			var validGpuIDs []string
 
@@ -171,18 +170,15 @@ func generateDockerHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier, c
 	cmd = append(cmd, "--network", "host")
 	cmd = append(cmd, "--ipc", "host")
 
-	// Add InfiniBand device flags if available
 	if ibFlags != "" {
 		// Split the flags string and add each --device flag
 		deviceFlags := strings.Fields(ibFlags)
 		cmd = append(cmd, deviceFlags...)
 	}
 
-	// Add volume mount for Weka filesystem
 	wekaMount := viper.GetString("weka-mount")
 	cmd = append(cmd, "-v", fmt.Sprintf("%s:/mnt/weka", wekaMount))
 
-	// Add environment variables
 	// CUDA_VISIBLE_DEVICES (if gpu-slots was used)
 	if cudaVisibleDevices != "" && viper.GetString("gpu-slots") != "" {
 		cmd = append(cmd, "-e", fmt.Sprintf("CUDA_VISIBLE_DEVICES=%s", cudaVisibleDevices))
@@ -224,11 +220,9 @@ func generateDockerHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier, c
 		}
 	}
 
-	// Add port mapping for vLLM API server
 	port := viper.GetInt("port")
 	cmd = append(cmd, "-p", fmt.Sprintf("%d:%d", port, port))
 
-	// Add custom docker arguments from --docker-arg
 	dockerArgs := viper.GetStringSlice("docker-arg")
 	for _, arg := range dockerArgs {
 		if arg != "" {
@@ -404,7 +398,6 @@ func executeDockerLaunchCommand(dockerCmd []string) error {
 	// Display the command being executed (abbreviated version)
 	fmt.Printf("Running: %s %s...\n", dockerCmd[0], strings.Join(dockerCmd[1:3], " "))
 
-	// Execute the command
 	err := cmd.Run()
 	if err != nil {
 		return fmt.Errorf("docker command failed: %w", err)

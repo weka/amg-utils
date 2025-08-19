@@ -278,7 +278,6 @@ type CuFileConfig struct {
 func runHostSystemChecks() error {
 	fmt.Println("--- System Checks ---")
 
-	// Check for required commands
 	if !commandExists("uv") {
 		return fmt.Errorf("uv command not found. Please install uv: https://docs.astral.sh/uv/getting-started/installation/")
 	}
@@ -289,13 +288,11 @@ func runHostSystemChecks() error {
 	}
 	fmt.Println("✅ git command found")
 
-	// Check cufile.json configuration
 	if err := checkCuFileConfig(); err != nil {
 		// This is a warning, not a fatal error
 		fmt.Printf("⚠️  %v\n", err)
 	}
 
-	// Check BPF JIT harden setting
 	if err := checkBpfJitHarden(); err != nil {
 		// This is a warning, not a fatal error
 		fmt.Printf("⚠️  %v\n", err)
@@ -322,27 +319,22 @@ func stripJSONComments(jsonData []byte) []byte {
 func checkCuFileConfig() error {
 	cufilePath := "/etc/cufile.json"
 
-	// Check if file exists
 	if _, err := os.Stat(cufilePath); os.IsNotExist(err) {
 		return fmt.Errorf("cufile.json not found at %s. Consider configuring CUDA file operations if needed", cufilePath)
 	}
 
-	// Read the file
 	data, err := os.ReadFile(cufilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", cufilePath, err)
 	}
 
-	// Strip comments from JSON content
 	cleanData := stripJSONComments(data)
 
-	// Parse JSON
 	var config CuFileConfig
 	if err := json.Unmarshal(cleanData, &config); err != nil {
 		return fmt.Errorf("failed to parse %s: %w", cufilePath, err)
 	}
 
-	// Check max_io_threads
 	if config.Execution.MaxIOThreads != 0 {
 		return fmt.Errorf("cufile.json warning: execution.max_io_threads is set to %d, but should be 0 for optimal performance", config.Execution.MaxIOThreads)
 	}
@@ -355,21 +347,18 @@ func checkCuFileConfig() error {
 func checkBpfJitHarden() error {
 	bpfJitHardenPath := "/proc/sys/net/core/bpf_jit_harden"
 
-	// Read the current value
 	data, err := os.ReadFile(bpfJitHardenPath)
 	if err != nil {
 		// If we can't read it, it might not exist on this kernel version
 		return fmt.Errorf("could not read %s: %w. This may be normal on some kernel versions", bpfJitHardenPath, err)
 	}
 
-	// Parse the value (trim whitespace)
 	valueStr := strings.TrimSpace(string(data))
 	value, err := strconv.Atoi(valueStr)
 	if err != nil {
 		return fmt.Errorf("could not parse bpf_jit_harden value '%s': %w", valueStr, err)
 	}
 
-	// Check if it's set to 0
 	if value != 0 {
 		return fmt.Errorf("net.core.bpf_jit_harden is set to %d, but should be 0 for optimal performance. To fix: sudo sysctl -w net.core.bpf_jit_harden=0", value)
 	}
@@ -412,7 +401,6 @@ func askForConfirmation(prompt string) (bool, error) {
 func customizeActivationScript(uvEnvPath string) error {
 	activateScript := filepath.Join(uvEnvPath, "bin", "activate")
 
-	// Read the current activation script
 	content, err := os.ReadFile(activateScript)
 	if err != nil {
 		return fmt.Errorf("failed to read activation script: %w", err)
@@ -441,7 +429,6 @@ func customizeActivationScript(uvEnvPath string) error {
 	}
 	contentStr = strings.Join(lines, "\n")
 
-	// Write the modified content back
 	err = os.WriteFile(activateScript, []byte(contentStr), 0755)
 	if err != nil {
 		return fmt.Errorf("failed to write modified activation script: %w", err)
@@ -451,20 +438,17 @@ func customizeActivationScript(uvEnvPath string) error {
 }
 
 func runHostSetup(cmd *cobra.Command) error {
-	// Check that conda is not active
 	if err := checkCondaDeactivated(); err != nil {
 		return err
 	}
 
 	fmt.Println("🚀 Starting AMG environment setup...")
 
-	// Get flag values
 	lmcacheRepo, _ := cmd.Flags().GetString("lmcache-repo")
 	lmcacheCommit, _ := cmd.Flags().GetString("lmcache-commit")
 	lmcacheBranch, _ := cmd.Flags().GetString("lmcache-branch")
 	vllmVersionFlag, _ := cmd.Flags().GetString("vllm-version")
 
-	// Create setup state
 	state := &SetupState{
 		LMCacheRepo:   lmcacheRepo,
 		LMCacheCommit: lmcacheCommit,
@@ -551,19 +535,16 @@ func setupUvEnvironment(state *SetupState) error {
 	basePath := getBasePath()
 	uvEnvPath := getUvEnvPath()
 
-	// Create base directory if it doesn't exist
 	if err := os.MkdirAll(basePath, 0755); err != nil {
 		return fmt.Errorf("failed to create base path '%s': %w", basePath, err)
 	}
 
 	fmt.Printf("Checking for UV virtual environment: '%s'...\n", uvEnvPath)
 
-	// Check if uv virtual environment exists
 	if _, err := os.Stat(uvEnvPath); os.IsNotExist(err) {
 		fmt.Printf("UV virtual environment '%s' not found.\n", uvEnvPath)
 		fmt.Printf("Creating UV virtual environment '%s' with Python 3.12...\n", uvEnvName)
 
-		// Navigate to the base path and create the virtual environment
 		cmd := exec.Command("uv", "venv", "--python", "3.12", ".venv")
 		cmd.Dir = basePath
 		cmd.Stdout = os.Stdout
@@ -609,7 +590,6 @@ func installUvPackages(state *SetupState) error {
 	}
 	fmt.Printf("✅ vLLM version %s installed successfully\n", state.VLLMVersion)
 
-	// Install other packages
 	otherPackages := []string{
 		"py-spy",
 		"scalene",
@@ -641,12 +621,10 @@ func setupRepository(state *SetupState) error {
 	basePath := getBasePath()
 	repoPath := getRepoPath()
 
-	// Create base directory
 	if err := os.MkdirAll(basePath, 0755); err != nil {
 		return fmt.Errorf("failed to create base path '%s': %w", basePath, err)
 	}
 
-	// Check if repository exists
 	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
 		fmt.Printf("Repository directory '%s' not found.\n", repoPath)
 		fmt.Printf("Cloning repository '%s' into '%s'...\n", state.LMCacheRepo, repoPath)
@@ -839,7 +817,6 @@ func installRepositoryDependencies(repoPath string, state *SetupState) error {
 }
 
 func runHostUpdate() error {
-	// Check that conda is not active
 	if err := checkCondaDeactivated(); err != nil {
 		return err
 	}
@@ -862,14 +839,12 @@ func runHostUpdate() error {
 
 	repoPath := getRepoPath()
 
-	// Check if repository exists
 	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
 		return fmt.Errorf("LMCache repository not found at '%s'. Please run 'amgctl host setup' first", repoPath)
 	}
 
 	fmt.Printf("Updating LMCache repository to latest commit of branch '%s'...\n", state.LMCacheBranch)
 
-	// Fetch latest changes
 	cmd := exec.Command("git", "-C", repoPath, "fetch", "origin")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -885,7 +860,6 @@ func runHostUpdate() error {
 	}
 	beforeCommit := strings.TrimSpace(string(beforeOutput))
 
-	// Pull latest changes for the branch
 	cmd = exec.Command("git", "-C", repoPath, "pull", "origin", state.LMCacheBranch)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -925,7 +899,6 @@ func runHostPreFlight(full bool) error {
 	}
 	fmt.Println()
 
-	// Check that conda is not active
 	if err := checkCondaDeactivated(); err != nil {
 		return err
 	}
@@ -1402,7 +1375,6 @@ func showSystemResources() error {
 
 // showLinuxMemoryInfo displays Linux-specific memory information
 func showLinuxMemoryInfo() {
-	// Read /proc/meminfo for memory information
 	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
 		fmt.Printf("⚠️  Could not read memory info: %v\n", err)
@@ -1578,7 +1550,6 @@ func showRepositoryStatus() error {
 
 	repoPath := getRepoPath()
 
-	// Check if repository exists
 	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
 		fmt.Println("❌ LMCache repository not found")
 		fmt.Printf("   Expected location: %s\n", repoPath)
@@ -1657,7 +1628,7 @@ func runHostLaunch(modelIdentifier string) error {
 	// Validate mutually exclusive flags
 	noPrometheus := viper.GetBool("no-prometheus")
 	prometheusDir := viper.GetString("prometheus-multiproc-dir")
-	
+
 	// Check if both --no-prometheus and --prometheus-multiproc-dir are specified
 	if noPrometheus && prometheusDir != DefaultPrometheusMultiprocDir {
 		return fmt.Errorf("--no-prometheus and --prometheus-multiproc-dir flags are mutually exclusive")
@@ -1785,7 +1756,6 @@ func runHostLaunch(modelIdentifier string) error {
 func performHostPreflightChecks(dryRun bool) error {
 	fmt.Println("--- Host Pre-flight Checks ---")
 
-	// Check that conda is not active
 	if err := checkCondaDeactivated(); err != nil {
 		return err
 	}
