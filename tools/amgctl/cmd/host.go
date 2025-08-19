@@ -93,7 +93,8 @@ Examples:
   amgctl host launch --vllm-arg "--disable-log-stats" my-model
   amgctl host launch --vllm-env "CUSTOM_VAR=value" --vllm-env "DEBUG=1" my-model
   amgctl host launch --skip-safefasttensors my-model`,
-	Args: cobra.ExactArgs(1),
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true, // Don't show help when vLLM execution fails
 	RunE: func(cmd *cobra.Command, args []string) error {
 		modelIdentifier := args[0]
 		return runHostLaunch(cmd, modelIdentifier)
