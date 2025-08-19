@@ -16,6 +16,7 @@ var launchCmd = &cobra.Command{
 	Use:   "launch <model_identifier>",
 	Short: "Launch an AMG container with the specified model",
 	Long: `Launch an AMG container with specified configurations for the given model.
+This command runs 'amgctl host launch' inside a Docker container.
 
 The model_identifier is a required argument that specifies which model to deploy.
 
@@ -130,7 +131,7 @@ Examples:
 		}
 
 		// Generate the Docker command
-		dockerCmd, err := generateDockerCommand(
+		dockerCmd, err := generateHostLaunchCommand(
 			modelIdentifier,
 			cudaVisibleDevices,
 			finalTensorParallelSize,
@@ -158,8 +159,8 @@ Examples:
 	},
 }
 
-// generateDockerCommand assembles the complete docker run command as a slice of strings
-func generateDockerCommand(modelIdentifier, cudaVisibleDevices string, tensorParallelSize int, ibFlags string) ([]string, error) {
+// generateHostLaunchCommand assembles the complete amgctl host launch command as a slice of strings
+func generateHostLaunchCommand(modelIdentifier, cudaVisibleDevices string, tensorParallelSize int, ibFlags string) ([]string, error) {
 	var cmd []string
 
 	// Static parts: docker run with basic options
@@ -250,69 +251,120 @@ func generateDockerCommand(modelIdentifier, cudaVisibleDevices string, tensorPar
 	}
 	cmd = append(cmd, dockerImage)
 
-	// vLLM serve command with all relevant flags
-	vllmCmd := buildVllmCommand(modelIdentifier, tensorParallelSize)
-	cmd = append(cmd, vllmCmd...)
+	// amgctl host launch command with all relevant flags
+	hostLaunchCmd := buildHostLaunchCommand(modelIdentifier, tensorParallelSize)
+	cmd = append(cmd, hostLaunchCmd...)
 
 	return cmd, nil
 }
 
-// buildVllmCommand constructs the vllm serve command with all relevant flags
-func buildVllmCommand(modelIdentifier string, tensorParallelSize int) []string {
-	var vllmCmd []string
+// buildHostLaunchCommand constructs the amgctl host launch command with all relevant flags
+func buildHostLaunchCommand(modelIdentifier string, tensorParallelSize int) []string {
+	var hostCmd []string
 
-	// Use the amg-vllm wrapper script (handles environment activation)
-	vllmCmd = append(vllmCmd, "amg-vllm", "serve", modelIdentifier)
+	// Use amgctl host launch command
+	hostCmd = append(hostCmd, "amgctl", "host", "launch", modelIdentifier)
 
-	// Add tensor parallel size
-	vllmCmd = append(vllmCmd, "--tensor-parallel-size", strconv.Itoa(tensorParallelSize))
+	// Add GPU allocation flags
+	gpuSlots := viper.GetString("gpu-slots")
+	if gpuSlots != "" {
+		hostCmd = append(hostCmd, "--gpu-slots", gpuSlots)
+	} else if tensorParallelSize > 0 {
+		hostCmd = append(hostCmd, "--tensor-parallel-size", strconv.Itoa(tensorParallelSize))
+	}
 
 	// Add GPU memory utilization
 	gpuMemUtil := viper.GetFloat64("gpu-mem-util")
-	vllmCmd = append(vllmCmd, "--gpu-memory-utilization", fmt.Sprintf("%.2f", gpuMemUtil))
+	if gpuMemUtil != 0.8 { // Only add if different from default
+		hostCmd = append(hostCmd, "--gpu-mem-util", fmt.Sprintf("%.2f", gpuMemUtil))
+	}
 
-	// Add max sequences
-	maxSequences := viper.GetInt("max-sequences")
-	vllmCmd = append(vllmCmd, "--max-num-seqs", strconv.Itoa(maxSequences))
+	// Add vLLM configuration flags
+	if maxSequences := viper.GetInt("max-sequences"); maxSequences != 256 {
+		hostCmd = append(hostCmd, "--max-sequences", strconv.Itoa(maxSequences))
+	}
 
-	// Add max model length
-	maxModelLen := viper.GetInt("max-model-len")
-	vllmCmd = append(vllmCmd, "--max-model-len", strconv.Itoa(maxModelLen))
+	if maxModelLen := viper.GetInt("max-model-len"); maxModelLen != 16384 {
+		hostCmd = append(hostCmd, "--max-model-len", strconv.Itoa(maxModelLen))
+	}
 
-	// Add max batched tokens
-	maxBatchedTokens := viper.GetInt("max-num-batched-tokens")
-	vllmCmd = append(vllmCmd, "--max-num-batched-tokens", strconv.Itoa(maxBatchedTokens))
+	if maxBatchedTokens := viper.GetInt("max-num-batched-tokens"); maxBatchedTokens != 16384 {
+		hostCmd = append(hostCmd, "--max-num-batched-tokens", strconv.Itoa(maxBatchedTokens))
+	}
 
-	// Add port
-	port := viper.GetInt("port")
-	vllmCmd = append(vllmCmd, "--port", strconv.Itoa(port))
+	if port := viper.GetInt("port"); port != 8000 {
+		hostCmd = append(hostCmd, "--port", strconv.Itoa(port))
+	}
 
-	// Add host binding
-	vllmCmd = append(vllmCmd, "--host", "0.0.0.0")
+	// Add Weka mount if different from default
+	if wekaMount := viper.GetString("weka-mount"); wekaMount != "/mnt/weka" {
+		hostCmd = append(hostCmd, "--weka-mount", wekaMount)
+	}
+
+	// Add LMCache configuration flags
+	if lmcachePath := viper.GetString("lmcache-path"); lmcachePath != "/mnt/weka/cache" {
+		hostCmd = append(hostCmd, "--lmcache-path", lmcachePath)
+	}
+
+	if lmcacheChunkSize := viper.GetInt("lmcache-chunk-size"); lmcacheChunkSize != 256 {
+		hostCmd = append(hostCmd, "--lmcache-chunk-size", strconv.Itoa(lmcacheChunkSize))
+	}
+
+	if lmcacheGdsThreads := viper.GetInt("lmcache-gds-threads"); lmcacheGdsThreads != 32 {
+		hostCmd = append(hostCmd, "--lmcache-gds-threads", strconv.Itoa(lmcacheGdsThreads))
+	}
+
+	if lmcacheCufileBufferSize := viper.GetString("lmcache-cufile-buffer-size"); lmcacheCufileBufferSize != "8192" {
+		hostCmd = append(hostCmd, "--lmcache-cufile-buffer-size", lmcacheCufileBufferSize)
+	}
+
+	if viper.GetBool("lmcache-local-cpu") {
+		hostCmd = append(hostCmd, "--lmcache-local-cpu")
+	}
+
+	if !viper.GetBool("lmcache-save-decode-cache") {
+		hostCmd = append(hostCmd, "--lmcache-save-decode-cache", "false")
+	}
+
+	// Add Hugging Face configuration
+	if hfHome := viper.GetString("hf-home"); hfHome != "/mnt/weka/hf_cache" {
+		hostCmd = append(hostCmd, "--hf-home", hfHome)
+	}
+
+	// Add Prometheus configuration
+	if prometheusDir := viper.GetString("prometheus-multiproc-dir"); prometheusDir != "/tmp/lmcache_prometheus" {
+		hostCmd = append(hostCmd, "--prometheus-multiproc-dir", prometheusDir)
+	}
 
 	// Add prefix caching flag if disabled
 	if viper.GetBool("no-enable-prefix-caching") {
-		vllmCmd = append(vllmCmd, "--no-enable-prefix-caching")
+		hostCmd = append(hostCmd, "--no-enable-prefix-caching")
 	}
 
-	// Add LMCache KV transfer configuration (always included)
-	kvTransferConfig := `{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_connector_extra_config": {}}`
-	vllmCmd = append(vllmCmd, "--kv-transfer-config", kvTransferConfig)
-
-	// Add load-format fastsafetensors unless --skip-safefasttensors is set
-	if !viper.GetBool("skip-safefasttensors") {
-		vllmCmd = append(vllmCmd, "--load-format", "fastsafetensors")
+	// Add skip fastsafetensors flag if set
+	if viper.GetBool("skip-safefasttensors") {
+		hostCmd = append(hostCmd, "--skip-safefasttensors")
 	}
 
 	// Add custom vLLM arguments from --vllm-arg
 	vllmArgs := viper.GetStringSlice("vllm-arg")
 	for _, arg := range vllmArgs {
 		if arg != "" {
-			vllmCmd = append(vllmCmd, arg)
+			hostCmd = append(hostCmd, "--vllm-arg", arg)
 		}
 	}
 
-	return vllmCmd
+	// Add custom environment variables from --vllm-env
+	vllmEnvVars := viper.GetStringSlice("vllm-env")
+	for _, envVar := range vllmEnvVars {
+		if envVar != "" {
+			hostCmd = append(hostCmd, "--vllm-env", envVar)
+		}
+	}
+
+	// Note: dry-run is handled by the docker launch command itself, not propagated to host launch
+
+	return hostCmd
 }
 
 // executeDockerCommand executes the Docker command with real-time output streaming
