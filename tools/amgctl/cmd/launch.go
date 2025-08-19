@@ -132,6 +132,7 @@ Examples:
 
 		// Generate the Docker command
 		dockerCmd, err := generateHostLaunchCommand(
+			cmd,
 			modelIdentifier,
 			cudaVisibleDevices,
 			finalTensorParallelSize,
@@ -160,7 +161,7 @@ Examples:
 }
 
 // generateHostLaunchCommand assembles the complete amgctl host launch command as a slice of strings
-func generateHostLaunchCommand(modelIdentifier, cudaVisibleDevices string, tensorParallelSize int, ibFlags string) ([]string, error) {
+func generateHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier, cudaVisibleDevices string, tensorParallelSize int, ibFlags string) ([]string, error) {
 	var cmd []string
 
 	// Static parts: docker run with basic options
@@ -252,113 +253,129 @@ func generateHostLaunchCommand(modelIdentifier, cudaVisibleDevices string, tenso
 	cmd = append(cmd, dockerImage)
 
 	// amgctl host launch command with all relevant flags
-	hostLaunchCmd := buildHostLaunchCommand(modelIdentifier, tensorParallelSize)
+	hostLaunchCmd := buildHostLaunchCommand(cobraCmd, modelIdentifier, tensorParallelSize)
 	cmd = append(cmd, hostLaunchCmd...)
 
 	return cmd, nil
 }
 
 // buildHostLaunchCommand constructs the amgctl host launch command with all relevant flags
-func buildHostLaunchCommand(modelIdentifier string, tensorParallelSize int) []string {
+func buildHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier string, tensorParallelSize int) []string {
 	var hostCmd []string
 
 	// Use amgctl host launch command
 	hostCmd = append(hostCmd, "amgctl", "host", "launch", modelIdentifier)
 
 	// Add GPU allocation flags
-	gpuSlots := viper.GetString("gpu-slots")
-	if gpuSlots != "" {
+	if cobraCmd.Flags().Changed("gpu-slots") {
+		gpuSlots := viper.GetString("gpu-slots")
 		hostCmd = append(hostCmd, "--gpu-slots", gpuSlots)
 	} else if tensorParallelSize > 0 {
 		hostCmd = append(hostCmd, "--tensor-parallel-size", strconv.Itoa(tensorParallelSize))
 	}
 
 	// Add GPU memory utilization
-	gpuMemUtil := viper.GetFloat64("gpu-mem-util")
-	if gpuMemUtil != DefaultGPUMemUtil {
+	if cobraCmd.Flags().Changed("gpu-mem-util") {
+		gpuMemUtil := viper.GetFloat64("gpu-mem-util")
 		hostCmd = append(hostCmd, "--gpu-mem-util", fmt.Sprintf("%.2f", gpuMemUtil))
 	}
 
 	// Add vLLM configuration flags
-	if maxSequences := viper.GetInt("max-sequences"); maxSequences != DefaultMaxSequences {
+	if cobraCmd.Flags().Changed("max-sequences") {
+		maxSequences := viper.GetInt("max-sequences")
 		hostCmd = append(hostCmd, "--max-sequences", strconv.Itoa(maxSequences))
 	}
 
-	if maxModelLen := viper.GetInt("max-model-len"); maxModelLen != DefaultMaxModelLen {
+	if cobraCmd.Flags().Changed("max-model-len") {
+		maxModelLen := viper.GetInt("max-model-len")
 		hostCmd = append(hostCmd, "--max-model-len", strconv.Itoa(maxModelLen))
 	}
 
-	if maxBatchedTokens := viper.GetInt("max-num-batched-tokens"); maxBatchedTokens != DefaultMaxBatchedTokens {
+	if cobraCmd.Flags().Changed("max-num-batched-tokens") {
+		maxBatchedTokens := viper.GetInt("max-num-batched-tokens")
 		hostCmd = append(hostCmd, "--max-num-batched-tokens", strconv.Itoa(maxBatchedTokens))
 	}
 
-	if port := viper.GetInt("port"); port != DefaultPort {
+	if cobraCmd.Flags().Changed("port") {
+		port := viper.GetInt("port")
 		hostCmd = append(hostCmd, "--port", strconv.Itoa(port))
 	}
 
-	// Add Weka mount if different from default
-	if wekaMount := viper.GetString("weka-mount"); wekaMount != DefaultWekaMount {
+	// Add Weka mount if specified
+	if cobraCmd.Flags().Changed("weka-mount") {
+		wekaMount := viper.GetString("weka-mount")
 		hostCmd = append(hostCmd, "--weka-mount", wekaMount)
 	}
 
 	// Add LMCache configuration flags
-	if lmcachePath := viper.GetString("lmcache-path"); lmcachePath != DefaultLMCachePath {
+	if cobraCmd.Flags().Changed("lmcache-path") {
+		lmcachePath := viper.GetString("lmcache-path")
 		hostCmd = append(hostCmd, "--lmcache-path", lmcachePath)
 	}
 
-	if lmcacheChunkSize := viper.GetInt("lmcache-chunk-size"); lmcacheChunkSize != DefaultLMCacheChunkSize {
+	if cobraCmd.Flags().Changed("lmcache-chunk-size") {
+		lmcacheChunkSize := viper.GetInt("lmcache-chunk-size")
 		hostCmd = append(hostCmd, "--lmcache-chunk-size", strconv.Itoa(lmcacheChunkSize))
 	}
 
-	if lmcacheGdsThreads := viper.GetInt("lmcache-gds-threads"); lmcacheGdsThreads != DefaultLMCacheGDSThreads {
+	if cobraCmd.Flags().Changed("lmcache-gds-threads") {
+		lmcacheGdsThreads := viper.GetInt("lmcache-gds-threads")
 		hostCmd = append(hostCmd, "--lmcache-gds-threads", strconv.Itoa(lmcacheGdsThreads))
 	}
 
-	if lmcacheCufileBufferSize := viper.GetString("lmcache-cufile-buffer-size"); lmcacheCufileBufferSize != DefaultLMCacheCuFileBuffer {
+	if cobraCmd.Flags().Changed("lmcache-cufile-buffer-size") {
+		lmcacheCufileBufferSize := viper.GetString("lmcache-cufile-buffer-size")
 		hostCmd = append(hostCmd, "--lmcache-cufile-buffer-size", lmcacheCufileBufferSize)
 	}
 
-	if viper.GetBool("lmcache-local-cpu") {
+	if cobraCmd.Flags().Changed("lmcache-local-cpu") && viper.GetBool("lmcache-local-cpu") {
 		hostCmd = append(hostCmd, "--lmcache-local-cpu")
 	}
 
-	if !viper.GetBool("lmcache-save-decode-cache") {
-		hostCmd = append(hostCmd, "--lmcache-save-decode-cache", "false")
+	if cobraCmd.Flags().Changed("lmcache-save-decode-cache") {
+		// Pass the value explicitly since the host launch default is true, but docker launch default is now false
+		hostCmd = append(hostCmd, "--lmcache-save-decode-cache", strconv.FormatBool(viper.GetBool("lmcache-save-decode-cache")))
 	}
 
 	// Add Hugging Face configuration
-	if hfHome := viper.GetString("hf-home"); hfHome != DefaultHFHome {
+	if cobraCmd.Flags().Changed("hf-home") {
+		hfHome := viper.GetString("hf-home")
 		hostCmd = append(hostCmd, "--hf-home", hfHome)
 	}
 
 	// Add Prometheus configuration
-	if prometheusDir := viper.GetString("prometheus-multiproc-dir"); prometheusDir != DefaultPrometheusMultiprocDir {
+	if cobraCmd.Flags().Changed("prometheus-multiproc-dir") {
+		prometheusDir := viper.GetString("prometheus-multiproc-dir")
 		hostCmd = append(hostCmd, "--prometheus-multiproc-dir", prometheusDir)
 	}
 
 	// Add prefix caching flag if disabled
-	if viper.GetBool("no-enable-prefix-caching") {
+	if cobraCmd.Flags().Changed("no-enable-prefix-caching") && viper.GetBool("no-enable-prefix-caching") {
 		hostCmd = append(hostCmd, "--no-enable-prefix-caching")
 	}
 
 	// Add skip fastsafetensors flag if set
-	if viper.GetBool("skip-safefasttensors") {
+	if cobraCmd.Flags().Changed("skip-safefasttensors") && viper.GetBool("skip-safefasttensors") {
 		hostCmd = append(hostCmd, "--skip-safefasttensors")
 	}
 
 	// Add custom vLLM arguments from --vllm-arg
-	vllmArgs := viper.GetStringSlice("vllm-arg")
-	for _, arg := range vllmArgs {
-		if arg != "" {
-			hostCmd = append(hostCmd, "--vllm-arg", arg)
+	if cobraCmd.Flags().Changed("vllm-arg") {
+		vllmArgs := viper.GetStringSlice("vllm-arg")
+		for _, arg := range vllmArgs {
+			if arg != "" {
+				hostCmd = append(hostCmd, "--vllm-arg", arg)
+			}
 		}
 	}
 
 	// Add custom environment variables from --vllm-env
-	vllmEnvVars := viper.GetStringSlice("vllm-env")
-	for _, envVar := range vllmEnvVars {
-		if envVar != "" {
-			hostCmd = append(hostCmd, "--vllm-env", envVar)
+	if cobraCmd.Flags().Changed("vllm-env") {
+		vllmEnvVars := viper.GetStringSlice("vllm-env")
+		for _, envVar := range vllmEnvVars {
+			if envVar != "" {
+				hostCmd = append(hostCmd, "--vllm-env", envVar)
+			}
 		}
 	}
 
@@ -415,12 +432,13 @@ func init() {
 	dockerCmd.AddCommand(launchCmd)
 
 	// Add persistent flags for launch configuration
-	launchCmd.PersistentFlags().String("weka-mount", DefaultWekaMount, "The Weka filesystem mount point on the host")
-	launchCmd.PersistentFlags().Float64("gpu-mem-util", DefaultGPUMemUtil, "GPU memory utilization for vLLM")
-	launchCmd.PersistentFlags().Int("max-sequences", DefaultMaxSequences, "The maximum number of sequences")
-	launchCmd.PersistentFlags().Int("max-model-len", DefaultMaxModelLen, "The maximum model length")
-	launchCmd.PersistentFlags().Int("max-num-batched-tokens", DefaultMaxBatchedTokens, "The maximum number of batched tokens")
-	launchCmd.PersistentFlags().Int("port", DefaultPort, "The port for the vLLM API server")
+	// Note: No default values - these are passed through to 'amgctl host launch' which defines the defaults
+	launchCmd.PersistentFlags().String("weka-mount", "", "The Weka filesystem mount point on the host")
+	launchCmd.PersistentFlags().Float64("gpu-mem-util", 0, "GPU memory utilization for vLLM")
+	launchCmd.PersistentFlags().Int("max-sequences", 0, "The maximum number of sequences")
+	launchCmd.PersistentFlags().Int("max-model-len", 0, "The maximum model length")
+	launchCmd.PersistentFlags().Int("max-num-batched-tokens", 0, "The maximum number of batched tokens")
+	launchCmd.PersistentFlags().Int("port", 0, "The port for the vLLM API server")
 
 	// Add GPU allocation flags
 	launchCmd.PersistentFlags().String("gpu-slots", "", "Comma-separated list of GPU IDs to use (e.g., '0,1,2,3')")
@@ -431,18 +449,19 @@ func init() {
 	launchCmd.PersistentFlags().Bool("dry-run", false, "Print the Docker command that would be executed without actually running it")
 
 	// Add LMCache configuration flags
-	launchCmd.PersistentFlags().String("lmcache-path", DefaultLMCachePath, "Path for the cache within the Weka mount")
-	launchCmd.PersistentFlags().Int("lmcache-chunk-size", DefaultLMCacheChunkSize, "LMCache chunk size")
-	launchCmd.PersistentFlags().Int("lmcache-gds-threads", DefaultLMCacheGDSThreads, "LMCache GDS threads")
-	launchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", DefaultLMCacheCuFileBuffer, "LMCache cuFile buffer size")
+	// Note: No default values - these are passed through to 'amgctl host launch' which defines the defaults
+	launchCmd.PersistentFlags().String("lmcache-path", "", "Path for the cache within the Weka mount")
+	launchCmd.PersistentFlags().Int("lmcache-chunk-size", 0, "LMCache chunk size")
+	launchCmd.PersistentFlags().Int("lmcache-gds-threads", 0, "LMCache GDS threads")
+	launchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", "", "LMCache cuFile buffer size")
 	launchCmd.PersistentFlags().Bool("lmcache-local-cpu", false, "Enable LMCache local CPU processing")
-	launchCmd.PersistentFlags().Bool("lmcache-save-decode-cache", DefaultLMCacheSaveDecodeCache, "Enable LMCache decode cache saving")
+	launchCmd.PersistentFlags().Bool("lmcache-save-decode-cache", false, "Enable LMCache decode cache saving")
 
 	// Add Hugging Face configuration flags
-	launchCmd.PersistentFlags().String("hf-home", DefaultHFHome, "Hugging Face cache directory path")
+	launchCmd.PersistentFlags().String("hf-home", "", "Hugging Face cache directory path")
 
 	// Add Prometheus configuration flags
-	launchCmd.PersistentFlags().String("prometheus-multiproc-dir", DefaultPrometheusMultiprocDir, "Prometheus multiprocess directory path")
+	launchCmd.PersistentFlags().String("prometheus-multiproc-dir", "", "Prometheus multiprocess directory path")
 
 	// Add vLLM configuration flags
 	launchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
