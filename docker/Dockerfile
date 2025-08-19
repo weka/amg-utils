@@ -58,21 +58,7 @@ RUN wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION
 # The amgctl binary now automatically detects CUDA version and uses appropriate PyTorch index
 RUN amgctl host setup
 
-# Create amg-vllm wrapper script
-RUN echo '#!/bin/bash' > /usr/local/bin/amg-vllm && \
-    echo '# AMG vLLM Wrapper Script' >> /usr/local/bin/amg-vllm && \
-    echo '# This script activates the uv environment and runs vllm with provided arguments' >> /usr/local/bin/amg-vllm && \
-    echo '' >> /usr/local/bin/amg-vllm && \
-    echo 'set -e' >> /usr/local/bin/amg-vllm && \
-    echo '' >> /usr/local/bin/amg-vllm && \
-    echo '# Activate the uv environment' >> /usr/local/bin/amg-vllm && \
-    echo 'source /root/amg_stable/.venv/bin/activate' >> /usr/local/bin/amg-vllm && \
-    echo '' >> /usr/local/bin/amg-vllm && \
-    echo '# Run vllm with all provided arguments' >> /usr/local/bin/amg-vllm && \
-    echo 'exec vllm "$@"' >> /usr/local/bin/amg-vllm && \
-    chmod +x /usr/local/bin/amg-vllm
-
-# Create prometheus directory for LMCache (temporary until we replace amg-vllm with amgctl-host-launch)
+# Create prometheus directory for LMCache
 RUN mkdir -p /tmp/lmcache_prometheus
 
 # Activate uv environment on login
