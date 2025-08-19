@@ -292,6 +292,12 @@ func runHostSystemChecks() error {
 		fmt.Printf("⚠️  %v\n", err)
 	}
 
+	// Check BPF JIT harden setting
+	if err := checkBpfJitHarden(); err != nil {
+		// This is a warning, not a fatal error
+		fmt.Printf("⚠️  %v\n", err)
+	}
+
 	fmt.Println("✅ System checks completed")
 	return nil
 }
@@ -339,6 +345,33 @@ func checkCuFileConfig() error {
 	}
 
 	fmt.Println("✅ cufile.json configuration is optimal (execution.max_io_threads = 0)")
+	return nil
+}
+
+// checkBpfJitHarden validates the net.core.bpf_jit_harden sysctl setting
+func checkBpfJitHarden() error {
+	bpfJitHardenPath := "/proc/sys/net/core/bpf_jit_harden"
+
+	// Read the current value
+	data, err := os.ReadFile(bpfJitHardenPath)
+	if err != nil {
+		// If we can't read it, it might not exist on this kernel version
+		return fmt.Errorf("could not read %s: %w. This may be normal on some kernel versions", bpfJitHardenPath, err)
+	}
+
+	// Parse the value (trim whitespace)
+	valueStr := strings.TrimSpace(string(data))
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return fmt.Errorf("could not parse bpf_jit_harden value '%s': %w", valueStr, err)
+	}
+
+	// Check if it's set to 0
+	if value != 0 {
+		return fmt.Errorf("net.core.bpf_jit_harden is set to %d, but should be 0 for optimal performance. To fix: sudo sysctl -w net.core.bpf_jit_harden=0", value)
+	}
+
+	fmt.Println("✅ net.core.bpf_jit_harden is optimally configured (0)")
 	return nil
 }
 
