@@ -90,6 +90,7 @@ Examples:
   amgctl host launch --max-num-batched-tokens 32768 --max-model-len 8192 my-model
   amgctl host launch --hf-home "/custom/hf/cache" my-model
   amgctl host launch --prometheus-multiproc-dir "/tmp/prometheus" my-model
+  amgctl host launch --no-prometheus my-model
   amgctl host launch --vllm-arg "--disable-log-stats" my-model
   amgctl host launch --vllm-env "CUSTOM_VAR=value" --vllm-env "DEBUG=1" my-model
   amgctl host launch --skip-safefasttensors my-model`,
@@ -152,6 +153,7 @@ func init() {
 
 	// Add Prometheus configuration flags
 	hostLaunchCmd.PersistentFlags().String("prometheus-multiproc-dir", DefaultPrometheusMultiprocDir, "Prometheus multiprocess directory path")
+	hostLaunchCmd.PersistentFlags().Bool("no-prometheus", false, "Disable prometheus multiprocess metrics completely (incompatible with --prometheus-multiproc-dir)")
 
 	// Add vLLM configuration flags
 	hostLaunchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
@@ -180,6 +182,7 @@ func init() {
 	_ = viper.BindPFlag("lmcache-save-decode-cache", hostLaunchCmd.PersistentFlags().Lookup("lmcache-save-decode-cache"))
 	_ = viper.BindPFlag("hf-home", hostLaunchCmd.PersistentFlags().Lookup("hf-home"))
 	_ = viper.BindPFlag("prometheus-multiproc-dir", hostLaunchCmd.PersistentFlags().Lookup("prometheus-multiproc-dir"))
+	_ = viper.BindPFlag("no-prometheus", hostLaunchCmd.PersistentFlags().Lookup("no-prometheus"))
 	_ = viper.BindPFlag("no-enable-prefix-caching", hostLaunchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
 	_ = viper.BindPFlag("skip-safefasttensors", hostLaunchCmd.PersistentFlags().Lookup("skip-safefasttensors"))
 	_ = viper.BindPFlag("vllm-arg", hostLaunchCmd.PersistentFlags().Lookup("vllm-arg"))
@@ -1651,6 +1654,15 @@ func runHostLaunch(modelIdentifier string) error {
 	// Check if dry-run mode is enabled (we need this early for pre-flight checks)
 	dryRun := viper.GetBool("dry-run")
 
+	// Validate mutually exclusive flags
+	noPrometheus := viper.GetBool("no-prometheus")
+	prometheusDir := viper.GetString("prometheus-multiproc-dir")
+	
+	// Check if both --no-prometheus and --prometheus-multiproc-dir are specified
+	if noPrometheus && prometheusDir != DefaultPrometheusMultiprocDir {
+		return fmt.Errorf("--no-prometheus and --prometheus-multiproc-dir flags are mutually exclusive")
+	}
+
 	// Perform pre-flight checks
 	if err := performHostPreflightChecks(dryRun); err != nil {
 		return err
@@ -1719,7 +1731,11 @@ func runHostLaunch(modelIdentifier string) error {
 	fmt.Printf("  LMCache Local CPU: %t\n", viper.GetBool("lmcache-local-cpu"))
 	fmt.Printf("  LMCache Save Decode Cache: %t\n", viper.GetBool("lmcache-save-decode-cache"))
 	fmt.Printf("  Hugging Face Cache: %s\n", viper.GetString("hf-home"))
-	fmt.Printf("  Prometheus Multiproc Dir: %s\n", viper.GetString("prometheus-multiproc-dir"))
+	if viper.GetBool("no-prometheus") {
+		fmt.Printf("  Prometheus: Disabled\n")
+	} else {
+		fmt.Printf("  Prometheus Multiproc Dir: %s\n", viper.GetString("prometheus-multiproc-dir"))
+	}
 	fmt.Printf("  vLLM Prefix Caching Disabled: %t\n", viper.GetBool("no-enable-prefix-caching"))
 
 	// Display GPU allocation settings
@@ -1822,25 +1838,29 @@ func performHostPreflightChecks(dryRun bool) error {
 	}
 	fmt.Println("✅ Hugging Face cache directory accessible")
 
-	// Check if prometheus-multiproc-dir directory exists and create it if needed
-	prometheusDir := viper.GetString("prometheus-multiproc-dir")
-	if prometheusDir != "" {
-		if _, err := os.Stat(prometheusDir); os.IsNotExist(err) {
-			// Directory doesn't exist - create it if we're not in dry-run mode
-			if !dryRun {
-				if err := os.MkdirAll(prometheusDir, 0755); err != nil {
-					return fmt.Errorf("failed to create prometheus multiprocess directory '%s': %v", prometheusDir, err)
+	// Check if prometheus-multiproc-dir directory exists and create it if needed (skip if prometheus disabled)
+	if !viper.GetBool("no-prometheus") {
+		prometheusDir := viper.GetString("prometheus-multiproc-dir")
+		if prometheusDir != "" {
+			if _, err := os.Stat(prometheusDir); os.IsNotExist(err) {
+				// Directory doesn't exist - create it if we're not in dry-run mode
+				if !dryRun {
+					if err := os.MkdirAll(prometheusDir, 0755); err != nil {
+						return fmt.Errorf("failed to create prometheus multiprocess directory '%s': %v", prometheusDir, err)
+					}
+					fmt.Printf("✅ Created prometheus multiprocess directory: %s\n", prometheusDir)
 				}
-				fmt.Printf("✅ Created prometheus multiprocess directory: %s\n", prometheusDir)
+				// If in dry-run mode or after successful creation, don't print anything else
+			} else if err != nil {
+				// Directory exists but we can't access it - this is an error
+				return fmt.Errorf("failed to access prometheus multiprocess directory '%s': %v", prometheusDir, err)
+			} else {
+				// Directory exists and is accessible - only print success message if it was already there
+				fmt.Println("✅ Prometheus multiprocess directory accessible")
 			}
-			// If in dry-run mode or after successful creation, don't print anything else
-		} else if err != nil {
-			// Directory exists but we can't access it - this is an error
-			return fmt.Errorf("failed to access prometheus multiprocess directory '%s': %v", prometheusDir, err)
-		} else {
-			// Directory exists and is accessible - only print success message if it was already there
-			fmt.Println("✅ Prometheus multiprocess directory accessible")
 		}
+	} else {
+		fmt.Println("✅ Prometheus disabled (--no-prometheus flag set)")
 	}
 
 	fmt.Println("✅ Host pre-flight checks completed")
@@ -1950,9 +1970,11 @@ func setupHostEnvironmentVariables(cudaVisibleDevices string) ([]string, error) 
 	hfHome := viper.GetString("hf-home")
 	envVars = append(envVars, fmt.Sprintf("HF_HOME=%s", hfHome))
 
-	// Prometheus environment variables
-	prometheusDir := viper.GetString("prometheus-multiproc-dir")
-	envVars = append(envVars, fmt.Sprintf("PROMETHEUS_MULTIPROC_DIR=%s", prometheusDir))
+	// Prometheus environment variables (only if not disabled)
+	if !viper.GetBool("no-prometheus") {
+		prometheusDir := viper.GetString("prometheus-multiproc-dir")
+		envVars = append(envVars, fmt.Sprintf("PROMETHEUS_MULTIPROC_DIR=%s", prometheusDir))
+	}
 
 	// Add USE_FASTSAFETENSOR environment variable unless --skip-safefasttensors is set
 	if !viper.GetBool("skip-safefasttensors") {
