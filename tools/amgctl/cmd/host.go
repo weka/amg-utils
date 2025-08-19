@@ -9,9 +9,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+	"github.com/weka/amg-utils/tools/amgctl/internal/hardware"
 )
 
 var hostCmd = &cobra.Command{
@@ -68,12 +71,42 @@ var hostPreFlightCmd = &cobra.Command{
 	},
 }
 
+var hostLaunchCmd = &cobra.Command{
+	Use:   "launch <model_identifier>",
+	Short: "Launch vLLM with the specified model locally on the host",
+	Long: `Launch vLLM with specified configurations for the given model on the local host.
+This command runs vLLM directly on the host instead of in a Docker container.
+
+The model_identifier is a required argument that specifies which model to deploy.
+
+Examples:
+  amgctl host launch meta-llama/Llama-2-7b-chat-hf
+  amgctl host launch microsoft/DialoGPT-medium
+  amgctl host launch --gpu-mem-util 0.8 --port 8080 openai-gpt-3.5-turbo
+  amgctl host launch --gpu-slots "0,1,2,3" meta-llama/Llama-2-7b-chat-hf
+  amgctl host launch --tensor-parallel-size 2 microsoft/DialoGPT-medium
+  amgctl host launch --dry-run meta-llama/Llama-2-7b-chat-hf
+  amgctl host launch --no-enable-prefix-caching --lmcache-local-cpu my-model
+  amgctl host launch --max-num-batched-tokens 32768 --max-model-len 8192 my-model
+  amgctl host launch --hf-home "/custom/hf/cache" my-model
+  amgctl host launch --prometheus-multiproc-dir "/tmp/prometheus" my-model
+  amgctl host launch --vllm-arg "--disable-log-stats" my-model
+  amgctl host launch --vllm-env "CUSTOM_VAR=value" --vllm-env "DEBUG=1" my-model
+  amgctl host launch --skip-safefasttensors my-model`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		modelIdentifier := args[0]
+		return runHostLaunch(cmd, modelIdentifier)
+	},
+}
+
 func init() {
 	hostCmd.AddCommand(hostSetupCmd)
 	hostCmd.AddCommand(hostStatusCmd)
 	hostCmd.AddCommand(hostClearCmd)
 	hostCmd.AddCommand(hostUpdateCmd)
 	hostCmd.AddCommand(hostPreFlightCmd)
+	hostCmd.AddCommand(hostLaunchCmd)
 
 	// Add flags to hostSetupCmd
 	hostSetupCmd.Flags().String("lmcache-repo", repoURL, "Alternative LMCache repository URL")
@@ -89,6 +122,67 @@ func init() {
 
 	// Add flags to hostClearCmd
 	hostClearCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt and proceed with deletion")
+
+	// Add flags to hostLaunchCmd (similar to docker launch but without docker-specific flags)
+	hostLaunchCmd.PersistentFlags().String("weka-mount", "/mnt/weka", "The Weka filesystem mount point on the host")
+	hostLaunchCmd.PersistentFlags().Float64("gpu-mem-util", 0.8, "GPU memory utilization for vLLM")
+	hostLaunchCmd.PersistentFlags().Int("max-sequences", 256, "The maximum number of sequences")
+	hostLaunchCmd.PersistentFlags().Int("max-model-len", 16384, "The maximum model length")
+	hostLaunchCmd.PersistentFlags().Int("max-num-batched-tokens", 16384, "The maximum number of batched tokens")
+	hostLaunchCmd.PersistentFlags().Int("port", 8000, "The port for the vLLM API server")
+
+	// Add GPU allocation flags
+	hostLaunchCmd.PersistentFlags().String("gpu-slots", "", "Comma-separated list of GPU IDs to use (e.g., '0,1,2,3')")
+	hostLaunchCmd.PersistentFlags().Int("tensor-parallel-size", 0, "Number of GPUs to use for tensor parallelism (used when --gpu-slots is not specified)")
+
+	// Add dry-run flag
+	hostLaunchCmd.PersistentFlags().Bool("dry-run", false, "Print the vLLM command that would be executed without actually running it")
+
+	// Add LMCache configuration flags
+	hostLaunchCmd.PersistentFlags().String("lmcache-path", "/mnt/weka/cache", "Path for the cache within the Weka mount")
+	hostLaunchCmd.PersistentFlags().Int("lmcache-chunk-size", 256, "LMCache chunk size")
+	hostLaunchCmd.PersistentFlags().Int("lmcache-gds-threads", 32, "LMCache GDS threads")
+	hostLaunchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", "8192", "LMCache cuFile buffer size")
+	hostLaunchCmd.PersistentFlags().Bool("lmcache-local-cpu", false, "Enable LMCache local CPU processing")
+	hostLaunchCmd.PersistentFlags().Bool("lmcache-save-decode-cache", true, "Enable LMCache decode cache saving")
+
+	// Add Hugging Face configuration flags
+	hostLaunchCmd.PersistentFlags().String("hf-home", "/mnt/weka/hf_cache", "Hugging Face cache directory path")
+
+	// Add Prometheus configuration flags
+	hostLaunchCmd.PersistentFlags().String("prometheus-multiproc-dir", "/tmp/lmcache_prometheus", "Prometheus multiprocess directory path")
+
+	// Add vLLM configuration flags
+	hostLaunchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
+	hostLaunchCmd.PersistentFlags().Bool("skip-safefasttensors", false, "Skip adding USE_FASTSAFETENSOR=true env var and --load-format fastsafetensors argument")
+
+	// Add escape hatch flags for advanced customization
+	hostLaunchCmd.PersistentFlags().StringSlice("vllm-arg", []string{}, "Additional arguments to pass to vllm serve command (repeatable)")
+	hostLaunchCmd.PersistentFlags().StringSlice("vllm-env", []string{}, "Additional environment variables for vllm process in KEY=VALUE format (repeatable)")
+
+	// Bind flags to Viper for configuration management
+	// Note: Using the same viper keys as docker launch for consistency
+	_ = viper.BindPFlag("weka-mount", hostLaunchCmd.PersistentFlags().Lookup("weka-mount"))
+	_ = viper.BindPFlag("gpu-mem-util", hostLaunchCmd.PersistentFlags().Lookup("gpu-mem-util"))
+	_ = viper.BindPFlag("max-sequences", hostLaunchCmd.PersistentFlags().Lookup("max-sequences"))
+	_ = viper.BindPFlag("max-model-len", hostLaunchCmd.PersistentFlags().Lookup("max-model-len"))
+	_ = viper.BindPFlag("max-num-batched-tokens", hostLaunchCmd.PersistentFlags().Lookup("max-num-batched-tokens"))
+	_ = viper.BindPFlag("port", hostLaunchCmd.PersistentFlags().Lookup("port"))
+	_ = viper.BindPFlag("gpu-slots", hostLaunchCmd.PersistentFlags().Lookup("gpu-slots"))
+	_ = viper.BindPFlag("tensor-parallel-size", hostLaunchCmd.PersistentFlags().Lookup("tensor-parallel-size"))
+	_ = viper.BindPFlag("dry-run", hostLaunchCmd.PersistentFlags().Lookup("dry-run"))
+	_ = viper.BindPFlag("lmcache-path", hostLaunchCmd.PersistentFlags().Lookup("lmcache-path"))
+	_ = viper.BindPFlag("lmcache-chunk-size", hostLaunchCmd.PersistentFlags().Lookup("lmcache-chunk-size"))
+	_ = viper.BindPFlag("lmcache-gds-threads", hostLaunchCmd.PersistentFlags().Lookup("lmcache-gds-threads"))
+	_ = viper.BindPFlag("lmcache-cufile-buffer-size", hostLaunchCmd.PersistentFlags().Lookup("lmcache-cufile-buffer-size"))
+	_ = viper.BindPFlag("lmcache-local-cpu", hostLaunchCmd.PersistentFlags().Lookup("lmcache-local-cpu"))
+	_ = viper.BindPFlag("lmcache-save-decode-cache", hostLaunchCmd.PersistentFlags().Lookup("lmcache-save-decode-cache"))
+	_ = viper.BindPFlag("hf-home", hostLaunchCmd.PersistentFlags().Lookup("hf-home"))
+	_ = viper.BindPFlag("prometheus-multiproc-dir", hostLaunchCmd.PersistentFlags().Lookup("prometheus-multiproc-dir"))
+	_ = viper.BindPFlag("no-enable-prefix-caching", hostLaunchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
+	_ = viper.BindPFlag("skip-safefasttensors", hostLaunchCmd.PersistentFlags().Lookup("skip-safefasttensors"))
+	_ = viper.BindPFlag("vllm-arg", hostLaunchCmd.PersistentFlags().Lookup("vllm-arg"))
+	_ = viper.BindPFlag("vllm-env", hostLaunchCmd.PersistentFlags().Lookup("vllm-env"))
 }
 
 // Configuration constants
@@ -1515,5 +1609,354 @@ func showRepositoryStatus() error {
 		}
 	}
 
+	return nil
+}
+
+// runHostLaunch launches vLLM locally on the host
+func runHostLaunch(cmd *cobra.Command, modelIdentifier string) error {
+	// Perform pre-flight checks
+	if err := performHostPreflightChecks(); err != nil {
+		return err
+	}
+
+	// Handle GPU allocation logic (same as docker launch)
+	gpuSlots := viper.GetString("gpu-slots")
+	tensorParallelSize := viper.GetInt("tensor-parallel-size")
+	var cudaVisibleDevices string
+	var finalTensorParallelSize int
+
+	if gpuSlots != "" {
+		// Parse comma-separated GPU slots
+		gpuIDs := strings.Split(gpuSlots, ",")
+		var validGpuIDs []string
+
+		// Validate and clean up GPU IDs
+		for _, id := range gpuIDs {
+			id = strings.TrimSpace(id)
+			if _, err := strconv.Atoi(id); err != nil {
+				return fmt.Errorf("invalid GPU ID '%s' in --gpu-slots: must be numeric", id)
+			}
+			validGpuIDs = append(validGpuIDs, id)
+		}
+
+		if len(validGpuIDs) == 0 {
+			return fmt.Errorf("--gpu-slots cannot be empty")
+		}
+
+		cudaVisibleDevices = strings.Join(validGpuIDs, ",")
+		finalTensorParallelSize = len(validGpuIDs)
+	} else {
+		// Use tensor-parallel-size flag or auto-detect
+		if tensorParallelSize > 0 {
+			finalTensorParallelSize = tensorParallelSize
+		} else {
+			// Auto-detect GPU count
+			gpuCount, err := hardware.GetGpuCount()
+			if err != nil {
+				return fmt.Errorf("failed to auto-detect GPU count: %v", err)
+			}
+			finalTensorParallelSize = gpuCount
+		}
+
+		// Set CUDA_VISIBLE_DEVICES to use all available GPUs up to tensor-parallel-size
+		var deviceIDs []string
+		for i := 0; i < finalTensorParallelSize; i++ {
+			deviceIDs = append(deviceIDs, strconv.Itoa(i))
+		}
+		cudaVisibleDevices = strings.Join(deviceIDs, ",")
+	}
+
+	// Display configuration
+	fmt.Println("\nHost Launch Configuration:")
+	fmt.Printf("  Model: %s\n", modelIdentifier)
+	fmt.Printf("  Weka Mount: %s\n", viper.GetString("weka-mount"))
+	fmt.Printf("  GPU Memory Utilization: %.2f\n", viper.GetFloat64("gpu-mem-util"))
+	fmt.Printf("  Max Sequences: %d\n", viper.GetInt("max-sequences"))
+	fmt.Printf("  Max Model Length: %d\n", viper.GetInt("max-model-len"))
+	fmt.Printf("  Max Batched Tokens: %d\n", viper.GetInt("max-num-batched-tokens"))
+	fmt.Printf("  Port: %d\n", viper.GetInt("port"))
+	fmt.Printf("  LMCache Path: %s\n", viper.GetString("lmcache-path"))
+	fmt.Printf("  LMCache Chunk Size: %d\n", viper.GetInt("lmcache-chunk-size"))
+	fmt.Printf("  LMCache GDS Threads: %d\n", viper.GetInt("lmcache-gds-threads"))
+	fmt.Printf("  LMCache cuFile Buffer Size: %s\n", viper.GetString("lmcache-cufile-buffer-size"))
+	fmt.Printf("  LMCache Local CPU: %t\n", viper.GetBool("lmcache-local-cpu"))
+	fmt.Printf("  LMCache Save Decode Cache: %t\n", viper.GetBool("lmcache-save-decode-cache"))
+	fmt.Printf("  Hugging Face Cache: %s\n", viper.GetString("hf-home"))
+	fmt.Printf("  Prometheus Multiproc Dir: %s\n", viper.GetString("prometheus-multiproc-dir"))
+	fmt.Printf("  vLLM Prefix Caching Disabled: %t\n", viper.GetBool("no-enable-prefix-caching"))
+
+	// Display GPU allocation settings
+	fmt.Println("\nGPU Allocation:")
+	if gpuSlots != "" {
+		fmt.Printf("  GPU Slots (manual): %s\n", gpuSlots)
+	} else if tensorParallelSize > 0 {
+		fmt.Printf("  Tensor Parallel Size (manual): %d\n", tensorParallelSize)
+	} else {
+		fmt.Printf("  Tensor Parallel Size (auto-detected): %d\n", finalTensorParallelSize)
+	}
+	fmt.Printf("  CUDA_VISIBLE_DEVICES: %s\n", cudaVisibleDevices)
+	fmt.Printf("  Final Tensor Parallel Size: %d\n", finalTensorParallelSize)
+
+	// Build the vLLM command
+	vllmCmd, err := buildHostVllmCommand(modelIdentifier, finalTensorParallelSize)
+	if err != nil {
+		return fmt.Errorf("failed to build vLLM command: %v", err)
+	}
+
+	// Set up environment variables
+	envVars, err := setupHostEnvironmentVariables(cudaVisibleDevices)
+	if err != nil {
+		return fmt.Errorf("failed to setup environment variables: %v", err)
+	}
+
+	// Check if dry-run mode is enabled
+	dryRun := viper.GetBool("dry-run")
+
+	if dryRun {
+		// Dry-run mode: display the command and environment variables
+		fmt.Println("\n🔍 Dry Run Mode - vLLM Command Preview:")
+		fmt.Println("=====================================")
+		fmt.Println("Environment Variables:")
+		for _, env := range envVars {
+			fmt.Printf("  export %s\n", env)
+		}
+		fmt.Println()
+		fmt.Printf("Command: %s\n", strings.Join(vllmCmd, " \\\n  "))
+		fmt.Println("\n💡 To execute this command, run without --dry-run flag")
+		return nil
+	}
+
+	// Normal mode: execute the command
+	fmt.Println("\n🚀 Executing vLLM Command on Host...")
+	return executeHostVllmCommand(vllmCmd, envVars)
+}
+
+// performHostPreflightChecks validates host environment requirements before execution
+func performHostPreflightChecks() error {
+	fmt.Println("--- Host Pre-flight Checks ---")
+
+	// Check that conda is not active
+	if err := checkCondaDeactivated(); err != nil {
+		return err
+	}
+
+	// Check if nvidia-smi command exists in PATH (if using GPUs)
+	if _, err := exec.LookPath("nvidia-smi"); err != nil {
+		return fmt.Errorf("nvidia-smi command not found in PATH. Please install NVIDIA drivers and ensure nvidia-smi is available in your system PATH")
+	}
+	fmt.Println("✅ nvidia-smi command found")
+
+	// Check if AMG environment exists
+	basePath := getBasePath()
+	if _, err := os.Stat(basePath); os.IsNotExist(err) {
+		return fmt.Errorf("AMG environment directory not found at '%s'. Please run 'amgctl host setup' first", basePath)
+	}
+	fmt.Println("✅ AMG environment directory found")
+
+	// Check if UV virtual environment exists
+	uvEnvPath := getUvEnvPath()
+	if _, err := os.Stat(uvEnvPath); os.IsNotExist(err) {
+		return fmt.Errorf("UV virtual environment not found at '%s'. Please run 'amgctl host setup' first", uvEnvPath)
+	}
+	fmt.Println("✅ UV virtual environment found")
+
+	// Check if vllm is installed in the virtual environment
+	if err := checkVllmInstallation(); err != nil {
+		return fmt.Errorf("vLLM installation check failed: %v", err)
+	}
+	fmt.Println("✅ vLLM installation verified")
+
+	// Check if weka-mount path exists
+	wekaMount := viper.GetString("weka-mount")
+	if wekaMount != "" {
+		if _, err := os.Stat(wekaMount); os.IsNotExist(err) {
+			return fmt.Errorf("weka mount path '%s' does not exist. Please ensure the path exists or specify a different --weka-mount", wekaMount)
+		} else if err != nil {
+			return fmt.Errorf("failed to access weka mount path '%s': %v", wekaMount, err)
+		}
+	}
+	fmt.Println("✅ Weka mount path accessible")
+
+	// Check if hf-home directory exists
+	hfHome := viper.GetString("hf-home")
+	if hfHome != "" {
+		if _, err := os.Stat(hfHome); os.IsNotExist(err) {
+			return fmt.Errorf("hugging Face cache directory '%s' does not exist. Please create the directory or specify a different --hf-home", hfHome)
+		} else if err != nil {
+			return fmt.Errorf("failed to access Hugging Face cache directory '%s': %v", hfHome, err)
+		}
+	}
+	fmt.Println("✅ Hugging Face cache directory accessible")
+
+	// Check if prometheus-multiproc-dir directory exists
+	prometheusDir := viper.GetString("prometheus-multiproc-dir")
+	if prometheusDir != "" {
+		if _, err := os.Stat(prometheusDir); os.IsNotExist(err) {
+			return fmt.Errorf("prometheus multiprocess directory '%s' does not exist. Please create the directory or specify a different --prometheus-multiproc-dir", prometheusDir)
+		} else if err != nil {
+			return fmt.Errorf("failed to access prometheus multiprocess directory '%s': %v", prometheusDir, err)
+		}
+	}
+	fmt.Println("✅ Prometheus multiprocess directory accessible")
+
+	fmt.Println("✅ Host pre-flight checks completed")
+	return nil
+}
+
+// checkVllmInstallation verifies that vLLM is properly installed in the virtual environment
+func checkVllmInstallation() error {
+	basePath := getBasePath()
+
+	// Check if vllm package is installed
+	cmd := exec.Command("uv", "run", "python", "-c", "import vllm; print(vllm.__version__)")
+	cmd.Dir = basePath
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("vLLM is not installed or not accessible in the virtual environment")
+	}
+
+	version := strings.TrimSpace(string(output))
+	fmt.Printf("  vLLM version: %s\n", version)
+	return nil
+}
+
+// buildHostVllmCommand constructs the vllm serve command for host execution
+func buildHostVllmCommand(modelIdentifier string, tensorParallelSize int) ([]string, error) {
+	var vllmCmd []string
+
+	// Use vllm serve directly (instead of amg-vllm wrapper used in docker)
+	vllmCmd = append(vllmCmd, "uv", "run", "vllm", "serve", modelIdentifier)
+
+	// Add tensor parallel size
+	vllmCmd = append(vllmCmd, "--tensor-parallel-size", strconv.Itoa(tensorParallelSize))
+
+	// Add GPU memory utilization
+	gpuMemUtil := viper.GetFloat64("gpu-mem-util")
+	vllmCmd = append(vllmCmd, "--gpu-memory-utilization", fmt.Sprintf("%.2f", gpuMemUtil))
+
+	// Add max sequences
+	maxSequences := viper.GetInt("max-sequences")
+	vllmCmd = append(vllmCmd, "--max-num-seqs", strconv.Itoa(maxSequences))
+
+	// Add max model length
+	maxModelLen := viper.GetInt("max-model-len")
+	vllmCmd = append(vllmCmd, "--max-model-len", strconv.Itoa(maxModelLen))
+
+	// Add max batched tokens
+	maxBatchedTokens := viper.GetInt("max-num-batched-tokens")
+	vllmCmd = append(vllmCmd, "--max-num-batched-tokens", strconv.Itoa(maxBatchedTokens))
+
+	// Add port
+	port := viper.GetInt("port")
+	vllmCmd = append(vllmCmd, "--port", strconv.Itoa(port))
+
+	// Add host binding
+	vllmCmd = append(vllmCmd, "--host", "0.0.0.0")
+
+	// Add prefix caching flag if disabled
+	if viper.GetBool("no-enable-prefix-caching") {
+		vllmCmd = append(vllmCmd, "--no-enable-prefix-caching")
+	}
+
+	// Add LMCache KV transfer configuration (always included)
+	kvTransferConfig := `{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_connector_extra_config": {}}`
+	vllmCmd = append(vllmCmd, "--kv-transfer-config", kvTransferConfig)
+
+	// Add load-format fastsafetensors unless --skip-safefasttensors is set
+	if !viper.GetBool("skip-safefasttensors") {
+		vllmCmd = append(vllmCmd, "--load-format", "fastsafetensors")
+	}
+
+	// Add custom vLLM arguments from --vllm-arg
+	vllmArgs := viper.GetStringSlice("vllm-arg")
+	for _, arg := range vllmArgs {
+		if arg != "" {
+			vllmCmd = append(vllmCmd, arg)
+		}
+	}
+
+	return vllmCmd, nil
+}
+
+// setupHostEnvironmentVariables sets up environment variables for the host vLLM process
+func setupHostEnvironmentVariables(cudaVisibleDevices string) ([]string, error) {
+	var envVars []string
+
+	// Set CUDA_VISIBLE_DEVICES if specified
+	if cudaVisibleDevices != "" && viper.GetString("gpu-slots") != "" {
+		envVars = append(envVars, fmt.Sprintf("CUDA_VISIBLE_DEVICES=%s", cudaVisibleDevices))
+	}
+
+	// LMCache environment variables
+	lmcachePath := viper.GetString("lmcache-path")
+	lmcacheChunkSize := viper.GetInt("lmcache-chunk-size")
+	lmcacheGdsThreads := viper.GetInt("lmcache-gds-threads")
+	lmcacheCufileBufferSize := viper.GetString("lmcache-cufile-buffer-size")
+	lmcacheLocalCpu := viper.GetBool("lmcache-local-cpu")
+	lmcacheSaveDecodeCache := viper.GetBool("lmcache-save-decode-cache")
+
+	envVars = append(envVars, fmt.Sprintf("LMCACHE_PATH=%s", lmcachePath))
+	envVars = append(envVars, fmt.Sprintf("LMCACHE_CHUNK_SIZE=%d", lmcacheChunkSize))
+	envVars = append(envVars, fmt.Sprintf("LMCACHE_EXTRA_CONFIG={\"gds_io_threads\": %d}", lmcacheGdsThreads))
+	envVars = append(envVars, fmt.Sprintf("LMCACHE_CUFILE_BUFFER_SIZE=%s", lmcacheCufileBufferSize))
+	envVars = append(envVars, fmt.Sprintf("LMCACHE_LOCAL_CPU=%t", lmcacheLocalCpu))
+	envVars = append(envVars, fmt.Sprintf("LMCACHE_SAVE_DECODE_CACHE=%t", lmcacheSaveDecodeCache))
+
+	// Hugging Face environment variables
+	hfHome := viper.GetString("hf-home")
+	envVars = append(envVars, fmt.Sprintf("HF_HOME=%s", hfHome))
+
+	// Prometheus environment variables
+	prometheusDir := viper.GetString("prometheus-multiproc-dir")
+	envVars = append(envVars, fmt.Sprintf("PROMETHEUS_MULTIPROC_DIR=%s", prometheusDir))
+
+	// Add USE_FASTSAFETENSOR environment variable unless --skip-safefasttensors is set
+	if !viper.GetBool("skip-safefasttensors") {
+		envVars = append(envVars, "USE_FASTSAFETENSOR=true")
+	}
+
+	// Add custom environment variables from --vllm-env
+	vllmEnvVars := viper.GetStringSlice("vllm-env")
+	for _, envVar := range vllmEnvVars {
+		if envVar != "" {
+			envVars = append(envVars, envVar)
+		}
+	}
+
+	return envVars, nil
+}
+
+// executeHostVllmCommand executes the vLLM command locally on the host with environment variables
+func executeHostVllmCommand(vllmCmd []string, envVars []string) error {
+	if len(vllmCmd) == 0 {
+		return fmt.Errorf("vLLM command is empty")
+	}
+
+	basePath := getBasePath()
+
+	// Create the command
+	cmd := exec.Command(vllmCmd[0], vllmCmd[1:]...)
+	cmd.Dir = basePath
+
+	// Set environment variables
+	cmd.Env = os.Environ() // Start with current environment
+	cmd.Env = append(cmd.Env, envVars...)
+
+	// Connect input/output for real-time interaction
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	// Display the command being executed (abbreviated version)
+	fmt.Printf("Running: %s %s...\n", vllmCmd[0], strings.Join(vllmCmd[1:3], " "))
+	fmt.Printf("Working Directory: %s\n", basePath)
+
+	// Execute the command
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("vLLM command failed: %w", err)
+	}
+
+	fmt.Println("\n✅ vLLM process completed!")
 	return nil
 }
