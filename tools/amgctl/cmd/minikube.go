@@ -23,48 +23,36 @@ Required tools:
   - nvidia-smi  
   - nvidia-ctk
   - docker
+  - minikube
 
 Optional tools:
-  - minikube (will show warning if missing, required with --single-node)
-  - helm (will show warning if missing)
-
-Flags:
-  --single-node    Make minikube a required dependency for single-node deployments`,
+  - helm (will show warning if missing)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		singleNode, _ := cmd.Flags().GetBool("single-node")
-		return runMinikubePreFlight(singleNode)
+		return runMinikubePreFlight()
 	},
 }
 
 func init() {
 	minikubeCmd.AddCommand(minikubePreFlightCmd)
-	minikubePreFlightCmd.Flags().Bool("single-node", false, "Make minikube a required dependency for single-node deployments")
 }
 
-func runMinikubePreFlight(singleNode bool) error {
+func runMinikubePreFlight() error {
 	fmt.Println("🚀 Minikube Pre-flight Check")
 	fmt.Println("==============================")
 
-	// Required tools (base set)
+	// Required tools
 	requiredTools := []string{
 		"kubectl",
 		"kubeadm",
 		"nvidia-smi",
 		"nvidia-ctk",
 		"docker",
+		"minikube",
 	}
 
-	// Optional tools (base set)
+	// Optional tools
 	optionalTools := []string{
 		"helm",
-	}
-
-	// If single-node mode, minikube becomes required
-	if singleNode {
-		requiredTools = append(requiredTools, "minikube")
-		fmt.Println("Single-node mode: minikube is required")
-	} else {
-		optionalTools = append(optionalTools, "minikube")
 	}
 
 	var missingRequired []string

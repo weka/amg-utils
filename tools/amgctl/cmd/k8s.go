@@ -26,27 +26,21 @@ Required tools:
   - docker
 
 Optional tools:
-  - minikube (will show warning if missing, required with --single-node)
-  - helm (will show warning if missing)
-
-Flags:
-  --single-node    Make minikube a required dependency for single-node deployments`,
+  - helm (will show warning if missing)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		singleNode, _ := cmd.Flags().GetBool("single-node")
-		return runK8sPreFlight(singleNode)
+		return runK8sPreFlight()
 	},
 }
 
 func init() {
 	k8sCmd.AddCommand(k8sPreFlightCmd)
-	k8sPreFlightCmd.Flags().Bool("single-node", false, "Make minikube a required dependency for single-node deployments")
 }
 
-func runK8sPreFlight(singleNode bool) error {
+func runK8sPreFlight() error {
 	fmt.Println("🚀 Kubernetes Pre-flight Check")
 	fmt.Println("==============================")
 
-	// Required tools (base set)
+	// Required tools
 	requiredTools := []string{
 		"kubectl",
 		"kubeadm",
@@ -55,17 +49,9 @@ func runK8sPreFlight(singleNode bool) error {
 		"docker",
 	}
 
-	// Optional tools (base set)
+	// Optional tools
 	optionalTools := []string{
 		"helm",
-	}
-
-	// If single-node mode, minikube becomes required
-	if singleNode {
-		requiredTools = append(requiredTools, "minikube")
-		fmt.Println("Single-node mode: minikube is required")
-	} else {
-		optionalTools = append(optionalTools, "minikube")
 	}
 
 	var missingRequired []string
