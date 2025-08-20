@@ -62,9 +62,10 @@ var hostUpdateCmd = &cobra.Command{
 }
 
 var hostPreFlightCmd = &cobra.Command{
-	Use:   "pre-flight",
-	Short: "Verify system readiness for AMG setup and execution",
-	Long:  `Perform pre-flight checks to ensure the host environment is ready for AMG setup and execution. This includes validating required tools, configurations, and system settings.`,
+	Use:          "pre-flight",
+	Short:        "Verify system readiness for AMG setup and execution",
+	Long:         `Perform pre-flight checks to ensure the host environment is ready for AMG setup and execution. This includes validating required tools, configurations, and system settings.`,
+	SilenceUsage: true, // Don't show help when validation fails
 	RunE: func(cmd *cobra.Command, args []string) error {
 		full, _ := cmd.Flags().GetBool("full")
 		return runHostPreFlight(full)
