@@ -44,6 +44,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libibverbs1 \
     libibverbs-dev \
     librdmacm-dev \
+    libcufile-rdma1 \
+    infiniband-diags \
+    ibverbs-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Clone the repository
