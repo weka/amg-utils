@@ -36,6 +36,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcufile-12-9 \
     librdmacm1 \
     ibverbs-providers \
+    iproute2 \
+    ibutils \
+    rdma-core \
+    less \
+    kmod \
+    libibverbs1 \
+    libibverbs-dev \
+    librdmacm-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Clone the repository
