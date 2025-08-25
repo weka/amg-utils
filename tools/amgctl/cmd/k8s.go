@@ -2,9 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -100,7 +98,7 @@ func runK8sPreFlight() error {
 
 	// Check nvidia_peermem kernel module
 	fmt.Println("--- Kernel Module Checks ---")
-	if err := checkK8sNvidiaPeermemModule(); err != nil {
+	if err := checkNvidiaPeermemModule(); err != nil {
 		return fmt.Errorf("nvidia_peermem module check failed: %w", err)
 	}
 
@@ -112,49 +110,4 @@ func runK8sPreFlight() error {
 func isCommandAvailable(command string) bool {
 	_, err := exec.LookPath(command)
 	return err == nil
-}
-
-func checkK8sNvidiaPeermemModule() error {
-	moduleName := "nvidia_peermem"
-
-	if err := checkK8sKernelModuleLoaded(moduleName); err == nil {
-		fmt.Println("✅ nvidia_peermem module is loaded")
-		return nil
-	}
-
-	if err := checkK8sKernelModuleExists(moduleName); err != nil {
-		return fmt.Errorf("nvidia_peermem module not found. Please install the nvidia_peermem module")
-	}
-
-	return fmt.Errorf("nvidia_peermem module found but not loaded. Please load it with: sudo modprobe %s", moduleName)
-}
-
-func checkK8sKernelModuleExists(moduleName string) error {
-	cmd := exec.Command("modinfo", moduleName)
-	output, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("module not found")
-	}
-
-	if len(output) == 0 {
-		return fmt.Errorf("module exists but modinfo returned no information")
-	}
-
-	return nil
-}
-
-func checkK8sKernelModuleLoaded(moduleName string) error {
-	data, err := os.ReadFile("/proc/modules")
-	if err != nil {
-		return fmt.Errorf("failed to read /proc/modules: %w", err)
-	}
-
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, moduleName+" ") || strings.HasPrefix(line, moduleName+"\t") {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("module not loaded")
 }

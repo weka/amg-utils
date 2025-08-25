@@ -374,7 +374,7 @@ func checkBpfJitHarden() error {
 
 func checkNvidiaPeermemModule() error {
 	moduleName := "nvidia_peermem"
-	
+
 	if err := checkKernelModuleLoaded(moduleName); err == nil {
 		fmt.Println("✅ nvidia_peermem module is loaded")
 		return nil
@@ -393,11 +393,11 @@ func checkKernelModuleExists(moduleName string) error {
 	if err != nil {
 		return fmt.Errorf("module not found")
 	}
-	
+
 	if len(output) == 0 {
 		return fmt.Errorf("module exists but modinfo returned no information")
 	}
-	
+
 	return nil
 }
 

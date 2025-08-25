@@ -38,7 +38,7 @@ func Execute() {
 			fmt.Fprintf(os.Stderr, "\nDid you mean one of:\n  amgctl docker launch <model>\n  amgctl host launch <model>\n")
 		}
 		if err.Error() == `unknown command "pre-flight" for "amgctl"` {
-			fmt.Fprintf(os.Stderr, "\nDid you mean one of:\n  amgctl host pre-flight\n  amgctl k8s pre-flight\n  amgctl minikube pre-flight\n")
+			fmt.Fprintf(os.Stderr, "\nDid you mean one of:\n  amgctl host pre-flight\n  amgctl k8s pre-flight\n")
 		}
 
 		fmt.Fprintf(os.Stderr, "\nRun 'amgctl --help' for usage.\n")
@@ -54,7 +54,6 @@ func init() {
 	rootCmd.AddCommand(hostCmd)
 	rootCmd.AddCommand(hwCmd)
 	rootCmd.AddCommand(k8sCmd)
-	rootCmd.AddCommand(minikubeCmd)
 	rootCmd.AddCommand(updateCmd)
 }
 
