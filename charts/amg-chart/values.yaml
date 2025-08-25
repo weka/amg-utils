@@ -1,0 +1,41 @@
+image:
+  repository: sdimitro509/amg
+  tag: "latest"
+  pullPolicy: IfNotPresent
+resources:
+  # We default to 8 assuming DGX. Configure accordingly.
+  gpu: 8
+  # RDMA resource configuration.
+  rdma:
+    # The 'name' must match the full resource name advertised by the Network Operator's
+    # device plugin, which was configured in the NicClusterPolicy. We default to 1 dev
+    # per GPU.
+    name: "rdma/rdma_shared"
+    count: 8
+  # Standard CPU and memory requests/limits can be added here if needed.
+  # cpu: "32"
+  # memory: "256Gi"
+
+# Dependency configuration
+network-operator:
+  enabled: true
+  # Override any values from the network-operator chart
+  sriov-network-operator:
+    images:
+      # TODO: Not sure if this is strictly needed - adding as nice to have for now
+      rdmaCni: ghcr.io/k8snetworkplumbingwg/rdma-cni:v1.3.0
+  nfd:
+    enabled: true # This is the default but we explicitly set it here and disable it for gpu-operator
+
+gpu-operator:
+  enabled: true
+  # Override any values from the gpu-operator chart
+  rdma:
+    enabled: true # Enabled to use legacy `nvidia-peermem`. TODO: Disable once we update kernel version & test
+    useHostMofed: false # Disable to avoid using dma_buf and network dev drivers from the host
+  gds:
+    enabled: true # Enables GDS for clusters that use NVIDIA's Network Operator (like ours)
+  gdrcopy:
+    enabled: true # TODO: Not sure if this is strictly needed. Adding as nice to have for now
+  nfd:
+    enabled: false # Set it to false to avoid conflict from the network-operator
