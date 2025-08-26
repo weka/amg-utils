@@ -861,7 +861,7 @@ func installRepositoryDependencies(repoPath string, state *SetupState) error {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("⚠️ Warning: Failed to install repository in editable mode: %v\n", err)
+		return fmt.Errorf("failed to install repository in editable mode: %w", err)
 	} else {
 		fmt.Println("✅ Repository installed in editable mode successfully")
 	}
