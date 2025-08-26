@@ -20,6 +20,9 @@ This command runs 'amgctl host launch' inside a Docker container.
 
 The model_identifier is a required argument that specifies which model to deploy.
 
+Use --generate-cufile-json to automatically create and configure the cufile.json
+with optimal settings inside the container before launching vLLM.
+
 Examples:
   amgctl docker launch meta-llama/Llama-2-7b-chat-hf
   amgctl docker launch microsoft/DialoGPT-medium
@@ -28,6 +31,7 @@ Examples:
   amgctl docker launch --tensor-parallel-size 2 microsoft/DialoGPT-medium
   amgctl docker launch --docker-image "custom/vllm:v1.0" test-model
   amgctl docker launch --dry-run meta-llama/Llama-2-7b-chat-hf
+  amgctl docker launch --generate-cufile-json meta-llama/Llama-2-7b-chat-hf
   amgctl docker launch --no-enable-prefix-caching --lmcache-local-cpu my-model
   amgctl docker launch --max-num-batched-tokens 32768 --max-model-len 8192 my-model
   amgctl docker launch --hf-home "/custom/hf/cache" my-model
@@ -322,7 +326,7 @@ func buildDockerHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier strin
 		hostCmd = append(hostCmd, "--lmcache-cufile-buffer-size", lmcacheCufileBufferSize)
 	}
 
-	if cobraCmd.Flags().Changed("lmcache-local-cpu") && viper.GetBool("lmcache-local-cpu") {
+	if cobraCmd.Flags().Changed("lmcache-local-cpu") {
 		hostCmd = append(hostCmd, "--lmcache-local-cpu")
 	}
 
@@ -344,13 +348,18 @@ func buildDockerHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier strin
 	}
 
 	// Add prefix caching flag if disabled
-	if cobraCmd.Flags().Changed("no-enable-prefix-caching") && viper.GetBool("no-enable-prefix-caching") {
+	if cobraCmd.Flags().Changed("no-enable-prefix-caching") {
 		hostCmd = append(hostCmd, "--no-enable-prefix-caching")
 	}
 
 	// Add skip fastsafetensors flag if set
-	if cobraCmd.Flags().Changed("skip-safefasttensors") && viper.GetBool("skip-safefasttensors") {
+	if cobraCmd.Flags().Changed("skip-safefasttensors") {
 		hostCmd = append(hostCmd, "--skip-safefasttensors")
+	}
+
+	// Add generate cufile flag if set
+	if cobraCmd.Flags().Changed("generate-cufile-json") {
+		hostCmd = append(hostCmd, "--generate-cufile-json")
 	}
 
 	// Add custom vLLM arguments from --vllm-arg
@@ -460,6 +469,9 @@ func init() {
 	dockerLaunchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
 	dockerLaunchCmd.PersistentFlags().Bool("skip-safefasttensors", false, "Skip adding USE_FASTSAFETENSOR=true env var and --load-format fastsafetensors argument")
 
+	// Add cufile.json generation flag
+	dockerLaunchCmd.PersistentFlags().Bool("generate-cufile-json", false, "Automatically generate and configure cufile.json for optimal GDS performance before launching vLLM")
+
 	// Add escape hatch flags for advanced customization
 	dockerLaunchCmd.PersistentFlags().StringSlice("docker-arg", []string{}, "Additional arguments to pass to docker run command (repeatable)")
 	dockerLaunchCmd.PersistentFlags().StringSlice("vllm-arg", []string{}, "Additional arguments to pass to vllm serve command (repeatable)")
@@ -488,6 +500,7 @@ func init() {
 	_ = viper.BindPFlag("prometheus-multiproc-dir", dockerLaunchCmd.PersistentFlags().Lookup("prometheus-multiproc-dir"))
 	_ = viper.BindPFlag("no-enable-prefix-caching", dockerLaunchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
 	_ = viper.BindPFlag("skip-safefasttensors", dockerLaunchCmd.PersistentFlags().Lookup("skip-safefasttensors"))
+	_ = viper.BindPFlag("generate-cufile-json", dockerLaunchCmd.PersistentFlags().Lookup("generate-cufile-json"))
 	_ = viper.BindPFlag("docker-arg", dockerLaunchCmd.PersistentFlags().Lookup("docker-arg"))
 	_ = viper.BindPFlag("vllm-arg", dockerLaunchCmd.PersistentFlags().Lookup("vllm-arg"))
 	_ = viper.BindPFlag("vllm-env", dockerLaunchCmd.PersistentFlags().Lookup("vllm-env"))
