@@ -46,8 +46,49 @@ Examples:
 	},
 }
 
+var hwNetCmd = &cobra.Command{
+	Use:   "net",
+	Short: "Show InfiniBand network information",
+	Long: `Display InfiniBand network interfaces with their IP addresses and status.
+
+This command shows all InfiniBand network interfaces detected on the host,
+including their IP addresses and whether the interface is up or down.
+
+Examples:
+  amgctl hw net`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Println("🌐 InfiniBand Network Information")
+		fmt.Println("=================================")
+
+		// Get InfiniBand network interfaces
+		interfaces, err := hardware.GetInfiniBandNetworkInterfaces()
+		if err != nil {
+			return fmt.Errorf("failed to get InfiniBand network interfaces: %w", err)
+		}
+
+		if len(interfaces) == 0 {
+			fmt.Println("No InfiniBand network interfaces found")
+			return nil
+		}
+
+		fmt.Printf("Found %d InfiniBand network interface(s):\n\n", len(interfaces))
+
+		for _, iface := range interfaces {
+			statusIcon := "🔴" // down
+			if iface.Status == "up" {
+				statusIcon = "🟢" // up
+			}
+
+			fmt.Printf("%s %s (%s) - %s\n", statusIcon, iface.Name, iface.Status, iface.IPAddress)
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	hwCmd.AddCommand(hwShowCmd)
+	hwCmd.AddCommand(hwNetCmd)
 }
 
 // displayGpuInfo shows GPU detection and details
