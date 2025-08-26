@@ -294,11 +294,6 @@ func runHostSystemChecks() error {
 		fmt.Printf("⚠️  %v\n", err)
 	}
 
-	if err := checkBpfJitHarden(); err != nil {
-		// This is a warning, not a fatal error
-		fmt.Printf("⚠️  %v\n", err)
-	}
-
 	if err := checkNvidiaPeermemModule(); err != nil {
 		return fmt.Errorf("nvidia_peermem module check failed: %w", err)
 	}
@@ -966,9 +961,15 @@ func runHostPreFlight(full bool) error {
 		return err
 	}
 
-	// Run GDS checks if --full flag is enabled
+	// Run GDS and additional checks if --full flag is enabled
 	if full {
 		fmt.Println()
+
+		// Check BPF JIT harden setting (warning only)
+		if err := checkBpfJitHarden(); err != nil {
+			fmt.Printf("⚠️  %v\n", err)
+		}
+
 		if err := runGDSChecks(); err != nil {
 			return fmt.Errorf("GDS checks failed: %w", err)
 		}
