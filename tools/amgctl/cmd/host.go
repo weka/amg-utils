@@ -320,12 +320,20 @@ func stripJSONComments(jsonData []byte) []byte {
 	return result
 }
 
-// checkCuFileConfig validates /etc/cufile.json configuration
+// checkCuFileConfig validates cufile.json configuration
+// First checks in basepath directory, then fallback to /etc/cufile.json
 func checkCuFileConfig() error {
-	cufilePath := "/etc/cufile.json"
+	// Try basepath directory first
+	basePath := getBasePath()
+	cufilePath := filepath.Join(basePath, "cufile.json")
 
+	// Check if cufile.json exists in basepath directory
 	if _, err := os.Stat(cufilePath); os.IsNotExist(err) {
-		return fmt.Errorf("cufile.json not found at %s. Consider configuring CUDA file operations if needed", cufilePath)
+		// Fallback to /etc/cufile.json if not found in basepath
+		cufilePath = "/etc/cufile.json"
+		if _, err := os.Stat(cufilePath); os.IsNotExist(err) {
+			return fmt.Errorf("cufile.json not found at %s or /etc/cufile.json. Consider configuring CUDA file operations if needed", filepath.Join(basePath, "cufile.json"))
+		}
 	}
 
 	data, err := os.ReadFile(cufilePath)
@@ -344,7 +352,7 @@ func checkCuFileConfig() error {
 		return fmt.Errorf("cufile.json warning: execution.max_io_threads is set to %d, but should be 0 for optimal performance", config.Execution.MaxIOThreads)
 	}
 
-	fmt.Println("✅ cufile.json configuration is optimal (execution.max_io_threads = 0)")
+	fmt.Printf("✅ cufile.json configuration is optimal (execution.max_io_threads = 0) [using %s]\n", cufilePath)
 	return nil
 }
 
