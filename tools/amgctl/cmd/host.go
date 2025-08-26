@@ -113,6 +113,9 @@ The command automatically checks for a cufile.json file in ~/amg_stable/cufile.j
 If found, it sets the CUFILE_ENV_PATH_JSON environment variable for vLLM to use
 GPU Direct Storage (GDS) optimizations.
 
+Use --generate-cufile-json to automatically create and configure the cufile.json
+with optimal settings before launching vLLM.
+
 Examples:
   amgctl host launch meta-llama/Llama-2-7b-chat-hf
   amgctl host launch microsoft/DialoGPT-medium
@@ -120,6 +123,7 @@ Examples:
   amgctl host launch --gpu-slots "0,1,2,3" meta-llama/Llama-2-7b-chat-hf
   amgctl host launch --tensor-parallel-size 2 microsoft/DialoGPT-medium
   amgctl host launch --dry-run meta-llama/Llama-2-7b-chat-hf
+  amgctl host launch --generate-cufile-json meta-llama/Llama-2-7b-chat-hf
   amgctl host launch --no-enable-prefix-caching --lmcache-local-cpu my-model
   amgctl host launch --max-num-batched-tokens 32768 --max-model-len 8192 my-model
   amgctl host launch --hf-home "/custom/hf/cache" my-model
@@ -197,6 +201,9 @@ func init() {
 	hostLaunchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
 	hostLaunchCmd.PersistentFlags().Bool("skip-safefasttensors", false, "Skip adding USE_FASTSAFETENSOR=true env var and --load-format fastsafetensors argument")
 
+	// Add cufile.json generation flag
+	hostLaunchCmd.PersistentFlags().Bool("generate-cufile-json", false, "Automatically generate and configure cufile.json for optimal GDS performance before launching vLLM")
+
 	// Add escape hatch flags for advanced customization
 	hostLaunchCmd.PersistentFlags().StringSlice("vllm-arg", []string{}, "Additional arguments to pass to vllm serve command (repeatable)")
 	hostLaunchCmd.PersistentFlags().StringSlice("vllm-env", []string{}, "Additional environment variables for vllm process in KEY=VALUE format (repeatable)")
@@ -223,6 +230,7 @@ func init() {
 	_ = viper.BindPFlag("no-prometheus", hostLaunchCmd.PersistentFlags().Lookup("no-prometheus"))
 	_ = viper.BindPFlag("no-enable-prefix-caching", hostLaunchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
 	_ = viper.BindPFlag("skip-safefasttensors", hostLaunchCmd.PersistentFlags().Lookup("skip-safefasttensors"))
+	_ = viper.BindPFlag("generate-cufile-json", hostLaunchCmd.PersistentFlags().Lookup("generate-cufile-json"))
 	_ = viper.BindPFlag("vllm-arg", hostLaunchCmd.PersistentFlags().Lookup("vllm-arg"))
 	_ = viper.BindPFlag("vllm-env", hostLaunchCmd.PersistentFlags().Lookup("vllm-env"))
 }
@@ -1746,6 +1754,21 @@ func runHostLaunch(modelIdentifier string) error {
 	// Perform pre-flight checks
 	if err := performHostPreflightChecks(dryRun); err != nil {
 		return err
+	}
+
+	// Generate cufile.json if requested (but not in dry-run mode)
+	generateCufile := viper.GetBool("generate-cufile-json")
+	if generateCufile {
+		if dryRun {
+			fmt.Println("🔍 Dry Run Mode: Would generate cufile.json for optimal GDS performance")
+		} else {
+			fmt.Println("🔧 Auto-generating cufile.json for optimal GDS performance...")
+			if err := runHostConfigCufile(); err != nil {
+				return fmt.Errorf("failed to generate cufile.json: %w", err)
+			}
+			fmt.Println("✅ cufile.json generated successfully")
+		}
+		fmt.Println()
 	}
 
 	// Handle GPU allocation logic (same as docker launch)
