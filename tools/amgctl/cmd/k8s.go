@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -37,8 +38,32 @@ Cluster health checks:
 	},
 }
 
+var k8sDeployCmd = &cobra.Command{
+	Use:   "deploy",
+	Short: "Deploy AMG to Kubernetes cluster",
+	Long: `Deploy AMG to Kubernetes cluster after running pre-flight checks.
+
+This command will:
+1. Run pre-flight checks to verify cluster readiness
+2. Add required helm repositories (nvidia)
+3. Update helm repositories
+4. Install the AMG chart with optimal settings
+
+The deployment includes:
+- NVIDIA helm repository for dependencies
+- AMG chart from OCI registry (ghcr.io/sdimitro/amg-chart)
+- 30-minute timeout with wait and debug flags for monitoring
+
+Examples:
+  amgctl k8s deploy`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runK8sDeploy()
+	},
+}
+
 func init() {
 	k8sCmd.AddCommand(k8sPreFlightCmd)
+	k8sCmd.AddCommand(k8sDeployCmd)
 }
 
 func runK8sPreFlight() error {
@@ -113,6 +138,105 @@ func runK8sPreFlight() error {
 	}
 
 	fmt.Println("🎉 Pre-flight check PASSED! All required tools are available and Kubernetes cluster is ready.")
+	return nil
+}
+
+// runK8sDeploy performs pre-flight checks and then deploys AMG to the Kubernetes cluster
+func runK8sDeploy() error {
+	fmt.Println("🚀 AMG Kubernetes Deployment")
+	fmt.Println("============================")
+	fmt.Println()
+
+	// Step 1: Run pre-flight checks first
+	fmt.Println("📋 Step 1: Running pre-flight checks...")
+	if err := runK8sPreFlight(); err != nil {
+		return fmt.Errorf("pre-flight checks failed: %w", err)
+	}
+	fmt.Println()
+
+	// Step 2: Add required helm repositories
+	fmt.Println("📦 Step 2: Setting up helm repositories...")
+	fmt.Print("Adding NVIDIA helm repository... ")
+	cmd := exec.Command("helm", "repo", "add", "nvidia", "https://helm.ngc.nvidia.com/nvidia")
+	if err := cmd.Run(); err != nil {
+		// Check if repo already exists (this is OK)
+		if strings.Contains(err.Error(), "already exists") {
+			fmt.Println("✅ Already exists")
+		} else {
+			fmt.Println("❌ FAILED")
+			return fmt.Errorf("failed to add nvidia helm repository: %w", err)
+		}
+	} else {
+		fmt.Println("✅ OK")
+	}
+
+	fmt.Print("Updating helm repositories... ")
+	cmd = exec.Command("helm", "repo", "update")
+	if err := cmd.Run(); err != nil {
+		fmt.Println("❌ FAILED")
+		return fmt.Errorf("failed to update helm repositories: %w", err)
+	}
+	fmt.Println("✅ OK")
+	fmt.Println()
+
+	// Step 3: Install the AMG chart
+	fmt.Println("🎯 Step 3: Installing AMG chart...")
+	fmt.Println("This may take up to 30 minutes depending on cluster resources...")
+	fmt.Print("Installing AMG release... ")
+	
+	cmd = exec.Command("helm", "install", "amg-release", 
+		"oci://ghcr.io/sdimitro/amg-chart", 
+		"--version", "0.1.0",
+		"--wait", 
+		"--timeout=30m", 
+		"--debug")
+	
+	// Stream output in real-time for better user experience
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Println("❌ FAILED")
+		return fmt.Errorf("failed to install AMG chart: %w", err)
+	}
+	
+	fmt.Println()
+	fmt.Println("✅ AMG chart installed successfully!")
+	fmt.Println()
+
+	// Step 4: Verify deployment
+	fmt.Println("🔍 Step 4: Verifying deployment...")
+	fmt.Print("Checking AMG release status... ")
+	cmd = exec.Command("helm", "status", "amg-release")
+	if err := cmd.Run(); err != nil {
+		fmt.Println("⚠️  WARNING - Could not verify release status")
+	} else {
+		fmt.Println("✅ OK")
+	}
+
+	fmt.Print("Checking AMG pods... ")
+	cmd = exec.Command("kubectl", "get", "pods", "-l", "app.kubernetes.io/instance=amg-release", "--no-headers")
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Println("⚠️  WARNING - Could not check pod status")
+	} else {
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		if len(lines) > 0 && lines[0] != "" {
+			fmt.Printf("✅ OK (%d pods found)\n", len(lines))
+		} else {
+			fmt.Println("⚠️  WARNING - No AMG pods found")
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("🎉 AMG deployment completed successfully!")
+	fmt.Println()
+	fmt.Println("📋 Next Steps:")
+	fmt.Println("  • Check deployment status: helm status amg-release")
+	fmt.Println("  • View AMG pods: kubectl get pods -l app.kubernetes.io/instance=amg-release")
+	fmt.Println("  • View AMG services: kubectl get services -l app.kubernetes.io/instance=amg-release")
+	fmt.Println("  • View logs: kubectl logs -l app.kubernetes.io/instance=amg-release")
+
 	return nil
 }
 
