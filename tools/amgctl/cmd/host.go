@@ -72,6 +72,35 @@ var hostPreFlightCmd = &cobra.Command{
 	},
 }
 
+var hostConfigCmd = &cobra.Command{
+	Use:   "config",
+	Short: "Configuration management commands",
+	Long:  `Manage host configuration files and settings for AMG.`,
+}
+
+var hostConfigCufileCmd = &cobra.Command{
+	Use:   "cufile",
+	Short: "Configure cufile.json for optimal GPU Direct Storage performance",
+	Long: `Copy /etc/cufile.json to the AMG base directory and configure it with optimal settings.
+
+This command will:
+- Copy /etc/cufile.json to ~/amg_stable/cufile.json
+- Set execution.max_io_threads to 0
+- Set execution.parallel_io to true
+- Set execution.max_io_queue_depth to 128 (or keep higher value if already set)
+- Set execution.max_request_parallelism to 4 (or keep higher value if already set)
+- Set properties.rdma_dev_addr_list to the list of UP InfiniBand IP addresses
+- Set properties.allow_compat_mode to true
+- Set properties.gds_rdma_write_support to true
+- Set fs.weka.rdma_write_support to true
+
+Examples:
+  amgctl host config cufile`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runHostConfigCufile()
+	},
+}
+
 var hostLaunchCmd = &cobra.Command{
 	Use:   "launch <model_identifier>",
 	Short: "Launch vLLM with the specified model locally on the host",
@@ -113,7 +142,11 @@ func init() {
 	hostCmd.AddCommand(hostClearCmd)
 	hostCmd.AddCommand(hostUpdateCmd)
 	hostCmd.AddCommand(hostPreFlightCmd)
+	hostCmd.AddCommand(hostConfigCmd)
 	hostCmd.AddCommand(hostLaunchCmd)
+
+	// Add config subcommands
+	hostConfigCmd.AddCommand(hostConfigCufileCmd)
 
 	// Add flags to hostSetupCmd
 	hostSetupCmd.Flags().String("lmcache-repo", repoURL, "Alternative LMCache repository URL")
@@ -272,11 +305,24 @@ func commandExists(cmd string) bool {
 	return err == nil
 }
 
-// CuFileConfig represents the structure of /etc/cufile.json
+// CuFileConfig represents the structure of /etc/cufile.json with all configurable fields
 type CuFileConfig struct {
 	Execution struct {
-		MaxIOThreads int `json:"max_io_threads"`
+		MaxIOThreads          int  `json:"max_io_threads"`
+		ParallelIO            bool `json:"parallel_io"`
+		MaxIOQueueDepth       int  `json:"max_io_queue_depth"`
+		MaxRequestParallelism int  `json:"max_request_parallelism"`
 	} `json:"execution"`
+	Properties struct {
+		RdmaDevAddrList     []string `json:"rdma_dev_addr_list"`
+		AllowCompatMode     bool     `json:"allow_compat_mode"`
+		GdsRdmaWriteSupport bool     `json:"gds_rdma_write_support"`
+	} `json:"properties"`
+	FS struct {
+		Weka struct {
+			RdmaWriteSupport bool `json:"rdma_write_support"`
+		} `json:"weka"`
+	} `json:"fs"`
 }
 
 // runHostSystemChecks performs shared system checks for both setup and pre-flight commands
@@ -2065,5 +2111,151 @@ func executeHostVllmCommand(vllmCmd []string, envVars []string) error {
 	}
 
 	fmt.Println("\n✅ vLLM process completed!")
+	return nil
+}
+
+// runHostConfigCufile copies and configures cufile.json for optimal performance
+func runHostConfigCufile() error {
+	fmt.Println("🔧 Configuring cufile.json for optimal GPU Direct Storage performance...")
+	fmt.Println()
+
+	// Check if source file exists
+	sourcePath := "/etc/cufile.json"
+	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		return fmt.Errorf("source file %s does not exist", sourcePath)
+	}
+
+	// Ensure base directory exists
+	basePath := getBasePath()
+	if err := os.MkdirAll(basePath, 0755); err != nil {
+		return fmt.Errorf("failed to create base directory %s: %w", basePath, err)
+	}
+
+	// Define destination path
+	destPath := filepath.Join(basePath, "cufile.json")
+
+	// Read and parse source file
+	fmt.Printf("📖 Reading source file: %s\n", sourcePath)
+	sourceData, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return fmt.Errorf("failed to read source file %s: %w", sourcePath, err)
+	}
+
+	// Strip comments and parse JSON
+	cleanData := stripJSONComments(sourceData)
+	var config CuFileConfig
+	if err := json.Unmarshal(cleanData, &config); err != nil {
+		return fmt.Errorf("failed to parse source file %s: %w", sourcePath, err)
+	}
+
+	fmt.Println("✅ Successfully parsed source cufile.json")
+
+	// Get InfiniBand UP IP addresses
+	fmt.Println("🔍 Detecting InfiniBand network interfaces...")
+	ibInterfaces, err := hardware.GetInfiniBandNetworkInterfaces()
+	if err != nil {
+		return fmt.Errorf("failed to get InfiniBand interfaces: %w", err)
+	}
+
+	var upIPs []string
+	for _, iface := range ibInterfaces {
+		if iface.Status == "up" && iface.IPAddress != "no IP assigned" {
+			// Extract just the IP part (remove CIDR notation if present)
+			ip := iface.IPAddress
+			if strings.Contains(ip, "/") {
+				parts := strings.Split(ip, "/")
+				ip = parts[0]
+			}
+			upIPs = append(upIPs, ip)
+		}
+	}
+
+	if len(upIPs) == 0 {
+		fmt.Println("⚠️  No UP InfiniBand interfaces with IP addresses found")
+	} else {
+		fmt.Printf("✅ Found %d UP InfiniBand interfaces: %v\n", len(upIPs), upIPs)
+	}
+
+	// Configure the values according to requirements
+	fmt.Println("⚙️  Configuring optimal settings...")
+
+	// execution.max_io_threads to be 0
+	if config.Execution.MaxIOThreads != 0 {
+		fmt.Printf("  Setting execution.max_io_threads: %d → 0\n", config.Execution.MaxIOThreads)
+		config.Execution.MaxIOThreads = 0
+	} else {
+		fmt.Println("  execution.max_io_threads: already set to 0 ✅")
+	}
+
+	// execution.parallel_io to be true
+	if !config.Execution.ParallelIO {
+		fmt.Printf("  Setting execution.parallel_io: %t → true\n", config.Execution.ParallelIO)
+		config.Execution.ParallelIO = true
+	} else {
+		fmt.Println("  execution.parallel_io: already set to true ✅")
+	}
+
+	// execution.max_io_queue_depth to be 128 (or keep higher)
+	if config.Execution.MaxIOQueueDepth < 128 {
+		fmt.Printf("  Setting execution.max_io_queue_depth: %d → 128\n", config.Execution.MaxIOQueueDepth)
+		config.Execution.MaxIOQueueDepth = 128
+	} else {
+		fmt.Printf("  execution.max_io_queue_depth: keeping higher value %d ✅\n", config.Execution.MaxIOQueueDepth)
+	}
+
+	// execution.max_request_parallelism to be 4 (or keep higher)
+	if config.Execution.MaxRequestParallelism < 4 {
+		fmt.Printf("  Setting execution.max_request_parallelism: %d → 4\n", config.Execution.MaxRequestParallelism)
+		config.Execution.MaxRequestParallelism = 4
+	} else {
+		fmt.Printf("  execution.max_request_parallelism: keeping higher value %d ✅\n", config.Execution.MaxRequestParallelism)
+	}
+
+	// properties.rdma_dev_addr_list to be the list of UP IB IPs
+	fmt.Printf("  Setting properties.rdma_dev_addr_list: %v → %v\n", config.Properties.RdmaDevAddrList, upIPs)
+	config.Properties.RdmaDevAddrList = upIPs
+
+	// properties.allow_compat_mode to be true
+	if !config.Properties.AllowCompatMode {
+		fmt.Printf("  Setting properties.allow_compat_mode: %t → true\n", config.Properties.AllowCompatMode)
+		config.Properties.AllowCompatMode = true
+	} else {
+		fmt.Println("  properties.allow_compat_mode: already set to true ✅")
+	}
+
+	// properties.gds_rdma_write_support to be true
+	if !config.Properties.GdsRdmaWriteSupport {
+		fmt.Printf("  Setting properties.gds_rdma_write_support: %t → true\n", config.Properties.GdsRdmaWriteSupport)
+		config.Properties.GdsRdmaWriteSupport = true
+	} else {
+		fmt.Println("  properties.gds_rdma_write_support: already set to true ✅")
+	}
+
+	// fs.weka.rdma_write_support to be true
+	if !config.FS.Weka.RdmaWriteSupport {
+		fmt.Printf("  Setting fs.weka.rdma_write_support: %t → true\n", config.FS.Weka.RdmaWriteSupport)
+		config.FS.Weka.RdmaWriteSupport = true
+	} else {
+		fmt.Println("  fs.weka.rdma_write_support: already set to true ✅")
+	}
+
+	// Write the configured JSON to destination
+	fmt.Printf("💾 Writing configured cufile.json to: %s\n", destPath)
+
+	// Marshal with proper indentation
+	outputData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal configuration: %w", err)
+	}
+
+	if err := os.WriteFile(destPath, outputData, 0644); err != nil {
+		return fmt.Errorf("failed to write destination file %s: %w", destPath, err)
+	}
+
+	fmt.Printf("✅ Successfully created optimized cufile.json at %s\n", destPath)
+	fmt.Println()
+	fmt.Println("🎉 cufile.json configuration completed!")
+	fmt.Println("💡 vLLM will automatically use this configuration when CUFILE_ENV_PATH_JSON is set")
+
 	return nil
 }
