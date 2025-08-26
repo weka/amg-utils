@@ -80,6 +80,10 @@ This command runs vLLM directly on the host instead of in a Docker container.
 
 The model_identifier is a required argument that specifies which model to deploy.
 
+The command automatically checks for a cufile.json file in ~/amg_stable/cufile.json.
+If found, it sets the CUFILE_ENV_PATH_JSON environment variable for vLLM to use
+GPU Direct Storage (GDS) optimizations.
+
 Examples:
   amgctl host launch meta-llama/Llama-2-7b-chat-hf
   amgctl host launch microsoft/DialoGPT-medium
@@ -1978,6 +1982,14 @@ func setupHostEnvironmentVariables(cudaVisibleDevices string) ([]string, error) 
 	// Set CUDA_VISIBLE_DEVICES if specified
 	if cudaVisibleDevices != "" && viper.GetString("gpu-slots") != "" {
 		envVars = append(envVars, fmt.Sprintf("CUDA_VISIBLE_DEVICES=%s", cudaVisibleDevices))
+	}
+
+	// Check for cufile.json and add CUFILE_ENV_PATH_JSON if it exists
+	basePath := getBasePath()
+	cufilePath := filepath.Join(basePath, "cufile.json")
+	if _, err := os.Stat(cufilePath); err == nil {
+		envVars = append(envVars, fmt.Sprintf("CUFILE_ENV_PATH_JSON=%s", cufilePath))
+		fmt.Printf("✅ Found cufile.json, setting CUFILE_ENV_PATH_JSON=%s\n", cufilePath)
 	}
 
 	// LMCache environment variables
