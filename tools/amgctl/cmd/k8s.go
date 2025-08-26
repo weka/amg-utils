@@ -24,9 +24,7 @@ Required tools:
   - nvidia-smi  
   - nvidia-ctk
   - docker
-
-Optional tools:
-  - helm (will show warning if missing)`,
+  - helm`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runK8sPreFlight()
 	},
@@ -47,12 +45,11 @@ func runK8sPreFlight() error {
 		"nvidia-smi",
 		"nvidia-ctk",
 		"docker",
+		"helm",
 	}
 
 	// Optional tools
-	optionalTools := []string{
-		"helm",
-	}
+	optionalTools := []string{}
 
 	var missingRequired []string
 	var missingOptional []string
