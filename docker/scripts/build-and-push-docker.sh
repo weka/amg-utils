@@ -24,7 +24,7 @@ show_usage() {
     echo "Usage: $0 [version]"
     echo ""
     echo "Arguments:"
-    echo "  version    Version tag for the Docker image (e.g., v0.1.13)"
+    echo "  version    Version tag for the Docker image (e.g., v0.1.14)"
     echo "             If not provided, will attempt to detect from git tag"
     echo ""
     echo "Environment Variables:"
@@ -32,7 +32,7 @@ show_usage() {
     echo "  DOCKERHUB_TOKEN     Docker Hub access token (required)"
     echo ""
     echo "Examples:"
-    echo "  $0 v0.1.13"
+    echo "  $0 v0.1.14"
     echo "  $0"
     echo ""
 }

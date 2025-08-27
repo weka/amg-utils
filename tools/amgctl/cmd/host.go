@@ -155,7 +155,7 @@ func init() {
 	// Add flags to hostSetupCmd
 	hostSetupCmd.Flags().String("lmcache-repo", repoURL, "Alternative LMCache repository URL")
 	hostSetupCmd.Flags().String("lmcache-commit", "", "Specific commit hash for LMCache repository")
-	hostSetupCmd.Flags().String("lmcache-branch", defaultRef, "Branch or tag to follow for LMCache repository (overrides commit)")
+	hostSetupCmd.Flags().String("lmcache-branch", defaultRef, "Tag, branch, or commit hash to use for LMCache repository (overrides --lmcache-commit)")
 	hostSetupCmd.Flags().String("vllm-version", vllmVersion, "vLLM version to install (e.g., 0.9.2, 0.10.0)")
 
 	// Add flags to hostStatusCmd
@@ -240,7 +240,7 @@ const (
 	uvEnvName   = "amg_stable"
 	repoURL     = "https://github.com/LMCache/LMCache.git"
 	repoName    = "LMCache"
-	defaultRef  = "v0.3.4" // Can be a tag or branch
+	defaultRef  = "dev" // Can be a tag, branch, or commit hash
 	vllmVersion = "0.10.1"
 	stateFile   = ".amg_setup_state.json"
 )
@@ -691,8 +691,7 @@ func installUvPackages(state *SetupState) error {
 	// Install vLLM with specified version (torch will be automatically installed as dependency)
 	vllmPackage := fmt.Sprintf("vllm==%s", state.VLLMVersion)
 	fmt.Printf("Installing vLLM version %s (including torch dependencies)...\n", state.VLLMVersion)
-	// Add --torch-backend=auto to auto-detect the optimial pytorch backend for us
-	cmd := exec.Command("uv", "pip", "install", "--no-cache-dir", vllmPackage, "--torch-backend=auto")
+	cmd := exec.Command("uv", "pip", "install", "--no-cache-dir", vllmPackage)
 	cmd.Dir = basePath
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -797,6 +796,16 @@ func isBranch(repoPath, ref string) bool {
 	return strings.TrimSpace(string(output)) != ""
 }
 
+// isCommit checks if the given reference is a valid commit hash
+func isCommit(repoPath, ref string) bool {
+	cmd := exec.Command("git", "-C", repoPath, "cat-file", "-t", ref)
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(output)) == "commit"
+}
+
 func checkoutCommitOrBranch(repoPath string, state *SetupState) error {
 	fmt.Println("\n--- Git Checkout ---")
 
@@ -809,7 +818,7 @@ func checkoutCommitOrBranch(repoPath string, state *SetupState) error {
 			return fmt.Errorf("failed to fetch origin: %w", err)
 		}
 
-		// Check if it's a tag or branch
+		// Check if it's a tag, branch, or commit
 		if isTag(repoPath, state.LMCacheBranch) {
 			// Tag mode - checkout the tag directly
 			fmt.Printf("Checking out tag: %s...\n", state.LMCacheBranch)
@@ -836,8 +845,21 @@ func checkoutCommitOrBranch(repoPath string, state *SetupState) error {
 			}
 
 			fmt.Printf("✅ Successfully checked out and tracking branch: %s\n", state.LMCacheBranch)
+		} else if isCommit(repoPath, state.LMCacheBranch) {
+			// Commit mode - checkout the specific commit
+			fmt.Printf("Checking out commit: %s...\n", state.LMCacheBranch)
+
+			cmd = exec.Command("git", "-C", repoPath, "checkout", state.LMCacheBranch)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("failed to checkout commit '%s': %w", state.LMCacheBranch, err)
+			}
+
+			fmt.Printf("✅ Successfully checked out commit: %s\n", state.LMCacheBranch)
 		} else {
-			return fmt.Errorf("reference '%s' is neither a valid tag nor a remote branch", state.LMCacheBranch)
+			return fmt.Errorf("reference '%s' is neither a valid tag, remote branch, nor commit hash", state.LMCacheBranch)
 		}
 	} else if state.LMCacheCommit != "" {
 		// Commit mode - checkout specific commit
@@ -873,47 +895,10 @@ func checkoutCommitOrBranch(repoPath string, state *SetupState) error {
 }
 
 func installRepositoryDependencies(repoPath string, state *SetupState) error {
-	fmt.Println("\n--- Installing Repository Dependencies ---")
 
-	reqFiles := []string{
-		filepath.Join(repoPath, "requirements", "build.txt"),
-		filepath.Join(repoPath, "requirements", "common.txt"),
-		filepath.Join(repoPath, "requirements", "cuda.txt"),
-	}
-
-	// Check if requirement files exist
-	allExist := true
-	for _, reqFile := range reqFiles {
-		if _, err := os.Stat(reqFile); os.IsNotExist(err) {
-			allExist = false
-			break
-		}
-	}
-
-	if allExist {
-		fmt.Println("Installing dependencies from requirements files...")
-		args := []string{"pip", "install", "--no-cache-dir", "--no-build-isolation"}
-		for _, reqFile := range reqFiles {
-			args = append(args, "-r", reqFile)
-		}
-
-		cmd := exec.Command("uv", args...)
-		cmd.Dir = repoPath
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("⚠️ Warning: Failed to install repository dependencies: %v\n", err)
-		} else {
-			fmt.Println("✅ Repository dependencies installed successfully")
-		}
-	} else {
-		fmt.Println("⚠️ One or more requirement files not found. Skipping dependency installation.")
-	}
-
-	// Install in editable mode with --no-build-isolation to avoid xformers build issues
+	// Install in editable mode - let uv handle the build environment
 	fmt.Println("Installing repository in editable mode...")
-	cmd := exec.Command("uv", "pip", "install", "-e", ".", "--no-build-isolation")
+	cmd := exec.Command("uv", "pip", "install", "-e", ".")
 	cmd.Dir = repoPath
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

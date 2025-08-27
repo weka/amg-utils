@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-const version = "0.1.13"
+const version = "0.1.14"
 
 var (
 	cfgFile string
