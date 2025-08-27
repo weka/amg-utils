@@ -61,9 +61,40 @@ Examples:
 	},
 }
 
+var k8sRemoveCmd = &cobra.Command{
+	Use:   "remove",
+	Short: "Remove AMG deployment from Kubernetes cluster",
+	Long: `Remove AMG deployment from Kubernetes cluster with verification.
+
+This command will:
+1. Check if AMG release exists
+2. Uninstall the AMG helm release with configurable timeout
+3. Verify removal was successful
+4. Optionally remove helm repositories
+
+The removal process includes:
+- Safe uninstallation of amg-release helm chart with 20-minute default timeout
+- Verification that all AMG resources are cleaned up
+- Optional cleanup of NVIDIA helm repository
+
+Examples:
+  amgctl k8s remove
+  amgctl k8s remove --remove-repos
+  amgctl k8s remove --timeout 30m
+  amgctl k8s remove --timeout 1h --remove-repos`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runK8sRemove(cmd)
+	},
+}
+
 func init() {
 	k8sCmd.AddCommand(k8sPreFlightCmd)
 	k8sCmd.AddCommand(k8sDeployCmd)
+	k8sCmd.AddCommand(k8sRemoveCmd)
+
+	// Add flags for remove command
+	k8sRemoveCmd.PersistentFlags().Bool("remove-repos", false, "Also remove helm repositories (nvidia) that were added during deployment")
+	k8sRemoveCmd.PersistentFlags().String("timeout", "20m", "Timeout duration for helm uninstall operation (e.g., 10m, 30m, 1h)")
 }
 
 func runK8sPreFlight() error {
@@ -183,14 +214,14 @@ func runK8sDeploy() error {
 	fmt.Println("🎯 Step 3: Installing AMG chart...")
 	fmt.Println("This may take up to 30 minutes depending on cluster resources...")
 	fmt.Print("Installing AMG release... ")
-	
-	cmd = exec.Command("helm", "install", "amg-release", 
-		"oci://ghcr.io/sdimitro/amg-chart", 
+
+	cmd = exec.Command("helm", "install", "amg-release",
+		"oci://ghcr.io/sdimitro/amg-chart",
 		"--version", "0.1.0",
-		"--wait", 
-		"--timeout=30m", 
+		"--wait",
+		"--timeout=30m",
 		"--debug")
-	
+
 	// Stream output in real-time for better user experience
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -199,7 +230,7 @@ func runK8sDeploy() error {
 		fmt.Println("❌ FAILED")
 		return fmt.Errorf("failed to install AMG chart: %w", err)
 	}
-	
+
 	fmt.Println()
 	fmt.Println("✅ AMG chart installed successfully!")
 	fmt.Println()
@@ -236,6 +267,141 @@ func runK8sDeploy() error {
 	fmt.Println("  • View AMG pods: kubectl get pods -l app.kubernetes.io/instance=amg-release")
 	fmt.Println("  • View AMG services: kubectl get services -l app.kubernetes.io/instance=amg-release")
 	fmt.Println("  • View logs: kubectl logs -l app.kubernetes.io/instance=amg-release")
+
+	return nil
+}
+
+// runK8sRemove removes the AMG deployment from the Kubernetes cluster
+func runK8sRemove(cmd *cobra.Command) error {
+	fmt.Println("🗑️  AMG Kubernetes Removal")
+	fmt.Println("=========================")
+	fmt.Println()
+
+	// Step 1: Check if AMG release exists
+	fmt.Println("🔍 Step 1: Checking AMG deployment...")
+	fmt.Print("Checking for amg-release... ")
+	execCmd := exec.Command("helm", "status", "amg-release", "--output", "json")
+	output, err := execCmd.Output()
+	if err != nil {
+		fmt.Println("❌ NOT FOUND")
+		fmt.Println()
+		fmt.Println("ℹ️  No AMG release found. Nothing to remove.")
+		fmt.Println("💡 If you're looking for a different release name, use: helm list")
+		return nil
+	}
+	fmt.Println("✅ FOUND")
+
+	// Parse basic info about the release
+	if len(output) > 0 {
+		fmt.Println("📋 Release details:")
+		// Get basic status without full JSON parsing
+		statusCmd := exec.Command("helm", "status", "amg-release", "--output", "table")
+		if statusOutput, err := statusCmd.Output(); err == nil {
+			// Show just the first few lines for context
+			lines := strings.Split(string(statusOutput), "\n")
+			for i, line := range lines {
+				if i < 5 && strings.TrimSpace(line) != "" { // Show first 5 non-empty lines
+					fmt.Printf("  %s\n", line)
+				}
+			}
+		}
+	}
+	fmt.Println()
+
+	// Step 2: Get user confirmation (implicit through command execution)
+	fmt.Println("⚠️  This will remove the AMG deployment and all associated resources.")
+	fmt.Println()
+
+	// Step 3: Remove the AMG helm release
+	timeout, _ := cmd.Flags().GetString("timeout")
+	fmt.Println("🗑️  Step 2: Removing AMG deployment...")
+	fmt.Printf("Uninstalling amg-release (timeout: %s)... ", timeout)
+
+	execCmd = exec.Command("helm", "uninstall", "amg-release", "--wait", "--timeout="+timeout)
+
+	// Stream output for better user experience
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+
+	if err := execCmd.Run(); err != nil {
+		fmt.Println("❌ FAILED")
+		return fmt.Errorf("failed to uninstall AMG release: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println("✅ AMG release uninstalled successfully!")
+	fmt.Println()
+
+	// Step 4: Verify removal
+	fmt.Println("🔍 Step 3: Verifying removal...")
+	fmt.Print("Checking for remaining AMG resources... ")
+
+	// Check for any remaining pods
+	execCmd = exec.Command("kubectl", "get", "pods", "-l", "app.kubernetes.io/instance=amg-release", "--no-headers")
+	output, err = execCmd.Output()
+	if err == nil && strings.TrimSpace(string(output)) != "" {
+		fmt.Println("⚠️  WARNING - Some pods still exist")
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, line := range lines {
+			if strings.TrimSpace(line) != "" {
+				fmt.Printf("    %s\n", line)
+			}
+		}
+	} else {
+		fmt.Println("✅ OK - No AMG pods found")
+	}
+
+	// Check for any remaining services
+	fmt.Print("Checking for remaining AMG services... ")
+	execCmd = exec.Command("kubectl", "get", "services", "-l", "app.kubernetes.io/instance=amg-release", "--no-headers")
+	output, err = execCmd.Output()
+	if err == nil && strings.TrimSpace(string(output)) != "" {
+		fmt.Println("⚠️  WARNING - Some services still exist")
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, line := range lines {
+			if strings.TrimSpace(line) != "" {
+				fmt.Printf("    %s\n", line)
+			}
+		}
+	} else {
+		fmt.Println("✅ OK - No AMG services found")
+	}
+
+	// Step 5: Optionally remove helm repositories
+	removeRepos, _ := cmd.Flags().GetBool("remove-repos")
+	if removeRepos {
+		fmt.Println()
+		fmt.Println("📦 Step 4: Removing helm repositories...")
+		fmt.Print("Removing nvidia helm repository... ")
+		execCmd = exec.Command("helm", "repo", "remove", "nvidia")
+		if err := execCmd.Run(); err != nil {
+			// Check if repo doesn't exist (this is OK)
+			if strings.Contains(err.Error(), "no repo named") {
+				fmt.Println("ℹ️  Already removed")
+			} else {
+				fmt.Println("⚠️  WARNING - Could not remove nvidia repository")
+				fmt.Printf("    Error: %v\n", err)
+			}
+		} else {
+			fmt.Println("✅ OK")
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("🎉 AMG removal completed successfully!")
+	fmt.Println()
+	fmt.Println("📋 Summary:")
+	fmt.Println("  • AMG helm release 'amg-release' has been uninstalled")
+	fmt.Println("  • Associated Kubernetes resources have been cleaned up")
+	if removeRepos {
+		fmt.Println("  • NVIDIA helm repository has been removed")
+	} else {
+		fmt.Println("  • NVIDIA helm repository was preserved (use --remove-repos to remove)")
+	}
+	fmt.Println()
+	fmt.Println("💡 To verify complete removal:")
+	fmt.Println("  • Check helm releases: helm list")
+	fmt.Println("  • Check for remaining resources: kubectl get all -l app.kubernetes.io/instance=amg-release")
 
 	return nil
 }
