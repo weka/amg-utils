@@ -240,8 +240,8 @@ const (
 	uvEnvName   = "amg_stable"
 	repoURL     = "https://github.com/LMCache/LMCache.git"
 	repoName    = "LMCache"
-	defaultRef  = "v0.3.3" // Can be a tag or branch
-	vllmVersion = "0.10.0"
+	defaultRef  = "v0.3.4" // Can be a tag or branch
+	vllmVersion = "0.10.1"
 	stateFile   = ".amg_setup_state.json"
 )
 
