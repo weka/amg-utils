@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -47,11 +48,12 @@ This command will:
 1. Run pre-flight checks to verify cluster readiness
 2. Add required helm repositories (nvidia)
 3. Update helm repositories
-4. Install the AMG chart with optimal settings
+4. Install the AMG chart in dedicated 'amg' namespace
 
 The deployment includes:
 - NVIDIA helm repository for dependencies
 - AMG chart from OCI registry (ghcr.io/sdimitro/amg-chart)
+- Installation in isolated 'amg' namespace (auto-created)
 - 30-minute timeout with wait and debug flags for monitoring
 
 Examples:
@@ -67,21 +69,28 @@ var k8sRemoveCmd = &cobra.Command{
 	Long: `Remove AMG deployment from Kubernetes cluster with verification.
 
 This command will:
-1. Check if AMG release exists
+1. Check if AMG release exists in 'amg' namespace
 2. Uninstall the AMG helm release with configurable timeout
-3. Verify removal was successful
-4. Optionally remove helm repositories
+3. Wait for namespace cleanup and verify removal
+4. Delete the 'amg' namespace by default for complete cleanup
+5. Optionally remove helm repositories
 
 The removal process includes:
-- Safe uninstallation of amg-release helm chart with 20-minute default timeout
+- Safe uninstallation of amg-release helm chart from 'amg' namespace
+- 20-minute default timeout for helm uninstall operation
 - Verification that all AMG resources are cleaned up
+- Automatic wait for namespace resource cleanup (up to 30 seconds)
+- Default deletion of the 'amg' namespace for complete cleanup
+- Optional retention of namespace with --keep-namespace flag
 - Optional cleanup of NVIDIA helm repository
 
 Examples:
-  amgctl k8s remove
-  amgctl k8s remove --remove-repos
-  amgctl k8s remove --timeout 30m
-  amgctl k8s remove --timeout 1h --remove-repos`,
+  amgctl k8s remove                                # Remove deployment and delete namespace (default)
+  amgctl k8s remove --remove-repos                 # Also remove helm repositories
+  amgctl k8s remove --timeout 30m                  # Custom timeout
+  amgctl k8s remove --keep-namespace               # Keep the 'amg' namespace after removal
+  amgctl k8s remove --keep-namespace --remove-repos # Keep namespace but remove repos
+  amgctl k8s remove --timeout 1h --remove-repos    # Custom timeout with repo cleanup`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runK8sRemove(cmd)
 	},
@@ -95,6 +104,8 @@ func init() {
 	// Add flags for remove command
 	k8sRemoveCmd.PersistentFlags().Bool("remove-repos", false, "Also remove helm repositories (nvidia) that were added during deployment")
 	k8sRemoveCmd.PersistentFlags().String("timeout", "20m", "Timeout duration for helm uninstall operation (e.g., 10m, 30m, 1h)")
+	k8sRemoveCmd.PersistentFlags().Bool("delete-namespace", true, "Delete the 'amg' namespace after removing the deployment")
+	k8sRemoveCmd.PersistentFlags().Bool("keep-namespace", false, "Keep the 'amg' namespace after removing the deployment (overrides --delete-namespace)")
 }
 
 func runK8sPreFlight() error {
@@ -218,6 +229,8 @@ func runK8sDeploy() error {
 	cmd = exec.Command("helm", "install", "amg-release",
 		"oci://ghcr.io/sdimitro/amg-chart",
 		"--version", "0.1.0",
+		"--namespace", "amg",
+		"--create-namespace",
 		"--wait",
 		"--timeout=30m",
 		"--debug")
@@ -238,7 +251,7 @@ func runK8sDeploy() error {
 	// Step 4: Verify deployment
 	fmt.Println("🔍 Step 4: Verifying deployment...")
 	fmt.Print("Checking AMG release status... ")
-	cmd = exec.Command("helm", "status", "amg-release")
+	cmd = exec.Command("helm", "status", "amg-release", "--namespace", "amg")
 	if err := cmd.Run(); err != nil {
 		fmt.Println("⚠️  WARNING - Could not verify release status")
 	} else {
@@ -246,7 +259,7 @@ func runK8sDeploy() error {
 	}
 
 	fmt.Print("Checking AMG pods... ")
-	cmd = exec.Command("kubectl", "get", "pods", "-l", "app.kubernetes.io/instance=amg-release", "--no-headers")
+	cmd = exec.Command("kubectl", "get", "pods", "-l", "app.kubernetes.io/instance=amg-release", "--namespace", "amg", "--no-headers")
 	output, err := cmd.Output()
 	if err != nil {
 		fmt.Println("⚠️  WARNING - Could not check pod status")
@@ -280,13 +293,13 @@ func runK8sRemove(cmd *cobra.Command) error {
 	// Step 1: Check if AMG release exists
 	fmt.Println("🔍 Step 1: Checking AMG deployment...")
 	fmt.Print("Checking for amg-release... ")
-	execCmd := exec.Command("helm", "status", "amg-release", "--output", "json")
+	execCmd := exec.Command("helm", "status", "amg-release", "--namespace", "amg", "--output", "json")
 	output, err := execCmd.Output()
 	if err != nil {
 		fmt.Println("❌ NOT FOUND")
 		fmt.Println()
-		fmt.Println("ℹ️  No AMG release found. Nothing to remove.")
-		fmt.Println("💡 If you're looking for a different release name, use: helm list")
+		fmt.Println("ℹ️  No AMG release found in 'amg' namespace. Nothing to remove.")
+		fmt.Println("💡 If you're looking for a different release name, use: helm list --all-namespaces")
 		return nil
 	}
 	fmt.Println("✅ FOUND")
@@ -295,7 +308,7 @@ func runK8sRemove(cmd *cobra.Command) error {
 	if len(output) > 0 {
 		fmt.Println("📋 Release details:")
 		// Get basic status without full JSON parsing
-		statusCmd := exec.Command("helm", "status", "amg-release", "--output", "table")
+		statusCmd := exec.Command("helm", "status", "amg-release", "--namespace", "amg", "--output", "table")
 		if statusOutput, err := statusCmd.Output(); err == nil {
 			// Show just the first few lines for context
 			lines := strings.Split(string(statusOutput), "\n")
@@ -309,7 +322,7 @@ func runK8sRemove(cmd *cobra.Command) error {
 	fmt.Println()
 
 	// Step 2: Get user confirmation (implicit through command execution)
-	fmt.Println("⚠️  This will remove the AMG deployment and all associated resources.")
+	fmt.Println("⚠️  This will remove the AMG deployment and delete the entire 'amg' namespace by default.")
 	fmt.Println()
 
 	// Step 3: Remove the AMG helm release
@@ -317,7 +330,7 @@ func runK8sRemove(cmd *cobra.Command) error {
 	fmt.Println("🗑️  Step 2: Removing AMG deployment...")
 	fmt.Printf("Uninstalling amg-release (timeout: %s)... ", timeout)
 
-	execCmd = exec.Command("helm", "uninstall", "amg-release", "--wait", "--timeout="+timeout)
+	execCmd = exec.Command("helm", "uninstall", "amg-release", "--namespace", "amg", "--wait", "--timeout="+timeout)
 
 	// Stream output for better user experience
 	execCmd.Stdout = os.Stdout
@@ -336,8 +349,8 @@ func runK8sRemove(cmd *cobra.Command) error {
 	fmt.Println("🔍 Step 3: Verifying removal...")
 	fmt.Print("Checking for remaining AMG resources... ")
 
-	// Check for any remaining pods
-	execCmd = exec.Command("kubectl", "get", "pods", "-l", "app.kubernetes.io/instance=amg-release", "--no-headers")
+	// Check for any remaining pods in the amg namespace
+	execCmd = exec.Command("kubectl", "get", "pods", "-n", "amg", "-l", "app.kubernetes.io/instance=amg-release", "--no-headers")
 	output, err = execCmd.Output()
 	if err == nil && strings.TrimSpace(string(output)) != "" {
 		fmt.Println("⚠️  WARNING - Some pods still exist")
@@ -351,9 +364,9 @@ func runK8sRemove(cmd *cobra.Command) error {
 		fmt.Println("✅ OK - No AMG pods found")
 	}
 
-	// Check for any remaining services
+	// Check for any remaining services in the amg namespace
 	fmt.Print("Checking for remaining AMG services... ")
-	execCmd = exec.Command("kubectl", "get", "services", "-l", "app.kubernetes.io/instance=amg-release", "--no-headers")
+	execCmd = exec.Command("kubectl", "get", "services", "-n", "amg", "-l", "app.kubernetes.io/instance=amg-release", "--no-headers")
 	output, err = execCmd.Output()
 	if err == nil && strings.TrimSpace(string(output)) != "" {
 		fmt.Println("⚠️  WARNING - Some services still exist")
@@ -365,6 +378,49 @@ func runK8sRemove(cmd *cobra.Command) error {
 		}
 	} else {
 		fmt.Println("✅ OK - No AMG services found")
+	}
+
+	// Wait for namespace to be cleaned up (check if any resources remain)
+	fmt.Print("Waiting for namespace cleanup... ")
+	namespaceClean := false
+	for i := 0; i < 30; i++ { // Wait up to 30 seconds
+		execCmd = exec.Command("kubectl", "get", "all", "-n", "amg", "--no-headers")
+		output, err = execCmd.Output()
+		if err != nil || strings.TrimSpace(string(output)) == "" {
+			fmt.Println("✅ OK - Namespace cleaned up")
+			namespaceClean = true
+			break
+		}
+		if i == 29 {
+			fmt.Println("⚠️  WARNING - Some resources may still exist in namespace")
+			fmt.Println("💡 You can check with: kubectl get all -n amg")
+		} else {
+			time.Sleep(1 * time.Second)
+		}
+	}
+
+	// Delete the namespace by default (unless explicitly kept)
+	keepNamespace, _ := cmd.Flags().GetBool("keep-namespace")
+	deleteNamespace, _ := cmd.Flags().GetBool("delete-namespace")
+
+	// keep-namespace flag overrides delete-namespace
+	shouldDeleteNamespace := deleteNamespace && !keepNamespace
+
+	if shouldDeleteNamespace {
+		fmt.Print("Deleting 'amg' namespace... ")
+		if !namespaceClean {
+			fmt.Println("⚠️  WARNING - Namespace may still contain resources")
+		}
+		execCmd = exec.Command("kubectl", "delete", "namespace", "amg", "--ignore-not-found=true")
+		if err := execCmd.Run(); err != nil {
+			fmt.Println("❌ FAILED")
+			fmt.Printf("⚠️  Warning: Failed to delete namespace: %v\n", err)
+		} else {
+			fmt.Println("✅ OK - Namespace deleted")
+		}
+	} else if keepNamespace {
+		fmt.Println("📁 Keeping 'amg' namespace as requested")
+		fmt.Println("💡 You can manually delete it later with: kubectl delete namespace amg")
 	}
 
 	// Step 5: Optionally remove helm repositories
