@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+
 	"strings"
 	"time"
 
@@ -55,11 +56,23 @@ The deployment includes:
 - AMG chart from OCI registry (ghcr.io/sdimitro/amg-chart)
 - Installation in isolated 'amg' namespace (auto-created)
 - Configurable timeout (default: 30 minutes) with wait and debug flags
+- Optional RDMA configuration for hardware-specific setups
+
+RDMA Configuration:
+When RDMA flags are provided, the command automatically:
+- Enables NicClusterPolicy in the chart
+- Configures RDMA shared device plugin with specified parameters
+- Passes configuration directly to helm using --set flags
 
 Examples:
-  amgctl k8s deploy                    # Deploy with default 30-minute timeout
-  amgctl k8s deploy --timeout 1h      # Deploy with custom 1-hour timeout
-  amgctl k8s deploy --timeout 45m     # Deploy with custom 45-minute timeout`,
+  amgctl k8s deploy                                    # Deploy with default settings
+  amgctl k8s deploy --timeout 1h                      # Deploy with custom timeout
+  amgctl k8s deploy --rdma-ifNames ibp24s0,ibp206s0   # Deploy with RDMA interface names
+  amgctl k8s deploy --rdma-ifNames ibp24s0,ibp206s0,ibp220s0,ibp64s0 \
+                    --rdma-vendors 15b3               # Deploy with interfaces and vendor filter
+  amgctl k8s deploy --rdma-ifNames ibp24s0 \
+                    --rdma-device-ids 1017 \
+                    --timeout 45m                      # Deploy with custom RDMA config and timeout`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runK8sDeploy(cmd)
 	},
@@ -107,6 +120,62 @@ func init() {
 
 	// Add flags for deploy command
 	k8sDeployCmd.PersistentFlags().String("timeout", "30m", "Timeout duration for helm install operation (e.g., 30m, 1h, 90m)")
+
+	// RDMA configuration flags
+	k8sDeployCmd.PersistentFlags().StringSlice("rdma-ifNames", []string{}, "List of RDMA interface names (e.g., ibp24s0,ibp206s0). Enables NicClusterPolicy when specified")
+	k8sDeployCmd.PersistentFlags().StringSlice("rdma-device-ids", []string{}, "List of RDMA device IDs to match (empty means all)")
+	k8sDeployCmd.PersistentFlags().StringSlice("rdma-drivers", []string{}, "List of RDMA drivers to match (empty means all)")
+	k8sDeployCmd.PersistentFlags().StringSlice("rdma-vendors", []string{}, "List of RDMA vendor IDs to match (empty means all)")
+}
+
+// hasRDMAFlags checks if any RDMA configuration flags are provided
+func hasRDMAFlags(cmd *cobra.Command) bool {
+	ifNames, _ := cmd.Flags().GetStringSlice("rdma-ifNames")
+	deviceIDs, _ := cmd.Flags().GetStringSlice("rdma-device-ids")
+	drivers, _ := cmd.Flags().GetStringSlice("rdma-drivers")
+	vendors, _ := cmd.Flags().GetStringSlice("rdma-vendors")
+
+	return len(ifNames) > 0 || len(deviceIDs) > 0 || len(drivers) > 0 || len(vendors) > 0
+}
+
+// generateRDMASetFlags creates helm --set flags for RDMA configuration
+func generateRDMASetFlags(cmd *cobra.Command) []string {
+	var setFlags []string
+
+	// Enable NicClusterPolicy
+	setFlags = append(setFlags, "--set", "nicClusterPolicy.enabled=true")
+
+	// Get RDMA configuration from flags
+	ifNames, _ := cmd.Flags().GetStringSlice("rdma-ifNames")
+	deviceIDs, _ := cmd.Flags().GetStringSlice("rdma-device-ids")
+	drivers, _ := cmd.Flags().GetStringSlice("rdma-drivers")
+	vendors, _ := cmd.Flags().GetStringSlice("rdma-vendors")
+
+	// Set interface names if provided
+	if len(ifNames) > 0 {
+		ifNamesStr := "{" + strings.Join(ifNames, ",") + "}"
+		setFlags = append(setFlags, "--set", "nicClusterPolicy.rdmaSharedDevicePlugin.selectors.ifNames="+ifNamesStr)
+	}
+
+	// Set device IDs if provided
+	if len(deviceIDs) > 0 {
+		deviceIDsStr := "{" + strings.Join(deviceIDs, ",") + "}"
+		setFlags = append(setFlags, "--set", "nicClusterPolicy.rdmaSharedDevicePlugin.selectors.deviceIDs="+deviceIDsStr)
+	}
+
+	// Set drivers if provided
+	if len(drivers) > 0 {
+		driversStr := "{" + strings.Join(drivers, ",") + "}"
+		setFlags = append(setFlags, "--set", "nicClusterPolicy.rdmaSharedDevicePlugin.selectors.drivers="+driversStr)
+	}
+
+	// Set vendors if provided
+	if len(vendors) > 0 {
+		vendorsStr := "{" + strings.Join(vendors, ",") + "}"
+		setFlags = append(setFlags, "--set", "nicClusterPolicy.rdmaSharedDevicePlugin.selectors.vendors="+vendorsStr)
+	}
+
+	return setFlags
 }
 
 func runK8sPreFlight() error {
@@ -225,16 +294,60 @@ func runK8sDeploy(cmd *cobra.Command) error {
 	// Step 3: Install the AMG chart
 	timeout, _ := cmd.Flags().GetString("timeout")
 	fmt.Println("🎯 Step 3: Installing AMG chart...")
+
+	// Check if RDMA configuration is provided
+	useRDMA := hasRDMAFlags(cmd)
+	chartPath := "oci://ghcr.io/sdimitro/amg-chart"
+
+	if useRDMA {
+		fmt.Println("🔧 RDMA configuration detected...")
+
+		// Print RDMA configuration summary
+		ifNames, _ := cmd.Flags().GetStringSlice("rdma-ifNames")
+		deviceIDs, _ := cmd.Flags().GetStringSlice("rdma-device-ids")
+		drivers, _ := cmd.Flags().GetStringSlice("rdma-drivers")
+		vendors, _ := cmd.Flags().GetStringSlice("rdma-vendors")
+
+		fmt.Println("📋 RDMA Configuration Summary:")
+		if len(ifNames) > 0 {
+			fmt.Printf("   • Interface Names: %v\n", ifNames)
+		}
+		if len(deviceIDs) > 0 {
+			fmt.Printf("   • Device IDs: %v\n", deviceIDs)
+		}
+		if len(drivers) > 0 {
+			fmt.Printf("   • Drivers: %v\n", drivers)
+		}
+		if len(vendors) > 0 {
+			fmt.Printf("   • Vendors: %v\n", vendors)
+		}
+		fmt.Printf("   • NicClusterPolicy: Enabled\n")
+	}
+
 	fmt.Printf("This may take up to %s depending on cluster resources...\n", timeout)
 	fmt.Printf("Installing AMG release (timeout: %s)... ", timeout)
-	execCmd = exec.Command("helm", "install", "amg-release",
-		"oci://ghcr.io/sdimitro/amg-chart",
-		"--version", "0.1.0",
+
+	// Build helm install command
+	helmArgs := []string{
+		"install", "amg-release",
+		chartPath,
 		"--namespace", "amg",
 		"--create-namespace",
 		"--wait",
-		"--timeout="+timeout,
-		"--debug")
+		"--timeout=" + timeout,
+		"--debug",
+	}
+
+	// Add version for OCI chart
+	helmArgs = append(helmArgs, "--version", "0.1.0")
+
+	// Add RDMA configuration using --set flags if configured
+	if useRDMA {
+		rdmaSetFlags := generateRDMASetFlags(cmd)
+		helmArgs = append(helmArgs, rdmaSetFlags...)
+	}
+
+	execCmd = exec.Command("helm", helmArgs...)
 
 	// Stream output in real-time for better user experience
 	execCmd.Stdout = os.Stdout
