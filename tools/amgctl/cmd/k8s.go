@@ -67,12 +67,13 @@ When RDMA flags are provided, the command automatically:
 Examples:
   amgctl k8s deploy                                    # Deploy with default settings
   amgctl k8s deploy --timeout 1h                      # Deploy with custom timeout
+  amgctl k8s deploy --gpus 4 --ib-devs 2              # Deploy with 4 GPUs and 2 IB devices per pod
   amgctl k8s deploy --rdma-ifNames ibp24s0,ibp206s0   # Deploy with RDMA interface names
   amgctl k8s deploy --rdma-ifNames ibp24s0,ibp206s0,ibp220s0,ibp64s0 \
                     --rdma-vendors 15b3               # Deploy with interfaces and vendor filter
-  amgctl k8s deploy --rdma-ifNames ibp24s0 \
-                    --rdma-device-ids 1017 \
-                    --timeout 45m                      # Deploy with custom RDMA config and timeout`,
+  amgctl k8s deploy --gpus 2 --ib-devs 2 \
+                    --rdma-ifNames ibp24s0,ibp206s0 \
+                    --timeout 45m                      # Deploy with custom resource and RDMA config`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runK8sDeploy(cmd)
 	},
@@ -120,6 +121,10 @@ func init() {
 
 	// Add flags for deploy command
 	k8sDeployCmd.PersistentFlags().String("timeout", "30m", "Timeout duration for helm install operation (e.g., 30m, 1h, 90m)")
+
+	// Resource configuration flags
+	k8sDeployCmd.PersistentFlags().Int("gpus", 0, "Number of GPUs to allocate per pod (default: uses chart default of 8)")
+	k8sDeployCmd.PersistentFlags().Int("ib-devs", 0, "Number of InfiniBand/RDMA devices to allocate per pod (default: uses chart default of 8)")
 
 	// RDMA configuration flags
 	k8sDeployCmd.PersistentFlags().StringSlice("rdma-ifNames", []string{}, "List of RDMA interface names (e.g., ibp24s0,ibp206s0). Enables NicClusterPolicy when specified")
@@ -173,6 +178,27 @@ func generateRDMASetFlags(cmd *cobra.Command) []string {
 	if len(vendors) > 0 {
 		vendorsStr := "{" + strings.Join(vendors, ",") + "}"
 		setFlags = append(setFlags, "--set", "nicClusterPolicy.rdmaSharedDevicePlugin.selectors.vendors="+vendorsStr)
+	}
+
+	return setFlags
+}
+
+// generateResourceSetFlags creates helm --set flags for resource configuration
+func generateResourceSetFlags(cmd *cobra.Command) []string {
+	var setFlags []string
+
+	// Get resource configuration from flags
+	gpus, _ := cmd.Flags().GetInt("gpus")
+	ibDevs, _ := cmd.Flags().GetInt("ib-devs")
+
+	// Set GPU count if provided
+	if gpus > 0 {
+		setFlags = append(setFlags, "--set", fmt.Sprintf("resources.gpu=%d", gpus))
+	}
+
+	// Set InfiniBand/RDMA device count if provided
+	if ibDevs > 0 {
+		setFlags = append(setFlags, "--set", fmt.Sprintf("resources.rdma.count=%d", ibDevs))
 	}
 
 	return setFlags
@@ -299,29 +325,51 @@ func runK8sDeploy(cmd *cobra.Command) error {
 	useRDMA := hasRDMAFlags(cmd)
 	chartPath := "oci://ghcr.io/sdimitro/amg-chart"
 
-	if useRDMA {
-		fmt.Println("🔧 RDMA configuration detected...")
+	// Check for resource configuration
+	gpus, _ := cmd.Flags().GetInt("gpus")
+	ibDevs, _ := cmd.Flags().GetInt("ib-devs")
+	hasResourceConfig := gpus > 0 || ibDevs > 0
 
-		// Print RDMA configuration summary
-		ifNames, _ := cmd.Flags().GetStringSlice("rdma-ifNames")
-		deviceIDs, _ := cmd.Flags().GetStringSlice("rdma-device-ids")
-		drivers, _ := cmd.Flags().GetStringSlice("rdma-drivers")
-		vendors, _ := cmd.Flags().GetStringSlice("rdma-vendors")
+	if useRDMA || hasResourceConfig {
+		if useRDMA {
+			fmt.Println("🔧 RDMA configuration detected...")
+		}
+		if hasResourceConfig {
+			fmt.Println("⚙️  Resource configuration detected...")
+		}
 
-		fmt.Println("📋 RDMA Configuration Summary:")
-		if len(ifNames) > 0 {
-			fmt.Printf("   • Interface Names: %v\n", ifNames)
+		// Print configuration summary
+		fmt.Println("📋 Configuration Summary:")
+
+		// Resource configuration
+		if gpus > 0 {
+			fmt.Printf("   • GPUs per pod: %d\n", gpus)
 		}
-		if len(deviceIDs) > 0 {
-			fmt.Printf("   • Device IDs: %v\n", deviceIDs)
+		if ibDevs > 0 {
+			fmt.Printf("   • InfiniBand/RDMA devices per pod: %d\n", ibDevs)
 		}
-		if len(drivers) > 0 {
-			fmt.Printf("   • Drivers: %v\n", drivers)
+
+		// RDMA policy configuration
+		if useRDMA {
+			ifNames, _ := cmd.Flags().GetStringSlice("rdma-ifNames")
+			deviceIDs, _ := cmd.Flags().GetStringSlice("rdma-device-ids")
+			drivers, _ := cmd.Flags().GetStringSlice("rdma-drivers")
+			vendors, _ := cmd.Flags().GetStringSlice("rdma-vendors")
+
+			if len(ifNames) > 0 {
+				fmt.Printf("   • RDMA Interface Names: %v\n", ifNames)
+			}
+			if len(deviceIDs) > 0 {
+				fmt.Printf("   • RDMA Device IDs: %v\n", deviceIDs)
+			}
+			if len(drivers) > 0 {
+				fmt.Printf("   • RDMA Drivers: %v\n", drivers)
+			}
+			if len(vendors) > 0 {
+				fmt.Printf("   • RDMA Vendors: %v\n", vendors)
+			}
+			fmt.Printf("   • NicClusterPolicy: Enabled\n")
 		}
-		if len(vendors) > 0 {
-			fmt.Printf("   • Vendors: %v\n", vendors)
-		}
-		fmt.Printf("   • NicClusterPolicy: Enabled\n")
 	}
 
 	fmt.Printf("This may take up to %s depending on cluster resources...\n", timeout)
@@ -340,6 +388,12 @@ func runK8sDeploy(cmd *cobra.Command) error {
 
 	// Add version for OCI chart
 	helmArgs = append(helmArgs, "--version", "0.1.0")
+
+	// Add resource configuration using --set flags if configured
+	if hasResourceConfig {
+		resourceSetFlags := generateResourceSetFlags(cmd)
+		helmArgs = append(helmArgs, resourceSetFlags...)
+	}
 
 	// Add RDMA configuration using --set flags if configured
 	if useRDMA {
