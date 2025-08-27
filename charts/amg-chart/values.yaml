@@ -39,3 +39,78 @@ gpu-operator:
     enabled: true # TODO: Not sure if this is strictly needed. Adding as nice to have for now
   nfd:
     enabled: false # Set it to false to avoid conflict from the network-operator
+
+# NIC Cluster Policy configuration
+nicClusterPolicy:
+  # -- Enable deployment of NicClusterPolicy
+  enabled: false
+  # -- Name of the NicClusterPolicy resource
+  name: "nic-cluster-policy"
+  
+  # OFED Driver configuration
+  ofedDriver:
+    # -- OFED driver container repository
+    repository: "nvcr.io/nvidia/mellanox"
+    # -- OFED driver container image name
+    image: "doca-driver"
+    # -- OFED driver version
+    version: "25.04-0.6.1.0-2"
+    # -- Force use of precompiled drivers
+    forcePrecompiled: false
+    # -- Image pull secrets for OFED driver
+    imagePullSecrets: []
+    # -- Termination grace period in seconds
+    terminationGracePeriodSeconds: 300
+    
+    # Probe configurations
+    startupProbe:
+      initialDelaySeconds: 10
+      periodSeconds: 20
+    livenessProbe:
+      initialDelaySeconds: 30
+      periodSeconds: 30
+    readinessProbe:
+      initialDelaySeconds: 10
+      periodSeconds: 30
+    
+    # Upgrade policy configuration
+    upgradePolicy:
+      autoUpgrade: true
+      maxParallelUpgrades: 1
+      safeLoad: false
+      drain:
+        enable: true
+        force: true
+        podSelector: ""
+        timeoutSeconds: 300
+        deleteEmptyDir: true
+
+  # RDMA Shared Device Plugin configuration
+  rdmaSharedDevicePlugin:
+    # -- RDMA plugin container repository
+    repository: "ghcr.io/mellanox"
+    # -- RDMA plugin container image name
+    image: "k8s-rdma-shared-dev-plugin"
+    # -- RDMA plugin version
+    version: "v1.5.3"
+    # -- Image pull secrets for RDMA plugin
+    imagePullSecrets: []
+    # -- Resource name for RDMA devices
+    resourceName: "rdma_shared"
+    # -- Maximum number of RDMA HCA devices
+    rdmaHcaMax: 1000
+    
+    # Device selectors
+    selectors:
+      # -- List of vendor IDs to match (empty means all)
+      vendors: []
+      # -- List of device IDs to match (empty means all)
+      deviceIDs: []
+      # -- List of drivers to match (empty means all)
+      drivers: []
+      # -- List of interface names to match
+      # For H100A hardware, use: ["ibp24s0", "ibp206s0", "ibp220s0", "ibp64s0", "ibp79s0", "ibp94s0", "ibp154s0", "ibp192s0"]
+      # For other hardware, update accordingly
+      ifNames: []
+      # -- List of link types to match (empty means all)
+      linkTypes: []
