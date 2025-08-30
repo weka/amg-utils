@@ -9,6 +9,7 @@ SIZE="2G"
 BLOCK_SIZE="1m"
 CONTAINER_NAME="amg"
 DURATION=""
+CUFILE_CONFIG_PATH=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -28,6 +29,7 @@ usage() {
     echo "  -s SIZE     Test file size (default: 2G)"
     echo "  -b SIZE     Block size (default: 1m)"
     echo "  -c NAME     Container name (default: amg)"
+    echo "  -u PATH     cuFile config path (default: inherit from env or /etc/cufile.json)"
     echo "  -T SECONDS  Duration in seconds for gdsio execution (optional)"
     echo "  -h          Show this help"
     echo ""
@@ -36,6 +38,7 @@ usage() {
     echo "  $0 container               # Test in container only"
     echo "  $0 both                    # Test both and compare"
     echo "  $0 -p /weka -w 32 both     # Custom path and workers"
+    echo "  $0 -u /custom/cufile.json both  # Custom cuFile config"
     echo "  $0 -T 60 both              # Run each test for 60 seconds duration"
 }
 
@@ -61,8 +64,9 @@ run_host_test() {
     local io_flag=$2
     
     log "Running ${test_type} test on HOST..."
+    log "Using cuFile config: $CUFILE_CONFIG_PATH"
     
-    export CUFILE_ENV_PATH_JSON="/etc/cufile.json"
+    export CUFILE_ENV_PATH_JSON="$CUFILE_CONFIG_PATH"
     
     /usr/local/cuda/gds/tools/gdsio \
         -D ${WEKA_PATH}/gdsio0 -d 0 -n 0 -w $WORKERS \
@@ -82,6 +86,7 @@ run_container_test() {
     local io_flag=$2
     
     log "Running ${test_type} test in CONTAINER..."
+    log "Using cuFile config: $CUFILE_CONFIG_PATH"
     
     docker run --rm \
         --gpus all --runtime=nvidia \
@@ -90,7 +95,7 @@ run_container_test() {
         -v ${WEKA_PATH}:${WEKA_PATH} \
         --env NVIDIA_GDS=enabled \
         --env CUFILE_ENV_PATH_JSON="/etc/cufile.json" \
-        -v /etc/cufile.json:/etc/cufile.json:ro \
+        -v ${CUFILE_CONFIG_PATH}:/etc/cufile.json:ro \
         --cap-add=IPC_LOCK \
         --network=host \
         $CONTAINER_NAME \
@@ -117,13 +122,14 @@ cleanup_files() {
 }
 
 # Parse command line arguments
-while getopts "p:w:s:b:c:T:h" opt; do
+while getopts "p:w:s:b:c:u:T:h" opt; do
     case $opt in
         p) WEKA_PATH="$OPTARG" ;;
         w) WORKERS="$OPTARG" ;;
         s) SIZE="$OPTARG" ;;
         b) BLOCK_SIZE="$OPTARG" ;;
         c) CONTAINER_NAME="$OPTARG" ;;
+        u) CUFILE_CONFIG_PATH="$OPTARG" ;;
         T) DURATION="$OPTARG" ;;
         h) usage; exit 0 ;;
         *) usage; exit 1 ;;
@@ -131,6 +137,19 @@ while getopts "p:w:s:b:c:T:h" opt; do
 done
 
 shift $((OPTIND-1))
+
+# Determine cuFile config path priority: command line > environment > default
+if [ -z "$CUFILE_CONFIG_PATH" ]; then
+    if [ -n "$CUFILE_ENV_PATH_JSON" ]; then
+        CUFILE_CONFIG_PATH="$CUFILE_ENV_PATH_JSON"
+        log "Using cuFile config from environment: $CUFILE_CONFIG_PATH"
+    else
+        CUFILE_CONFIG_PATH="/etc/cufile.json"
+        log "Using default cuFile config: $CUFILE_CONFIG_PATH"
+    fi
+else
+    log "Using cuFile config from command line: $CUFILE_CONFIG_PATH"
+fi
 
 if [ $# -ne 1 ]; then
     error "Please specify test target: host, container, or both"
@@ -155,6 +174,7 @@ echo "  Workers: $WORKERS"
 echo "  File Size: $SIZE"
 echo "  Block Size: $BLOCK_SIZE"
 echo "  Container: $CONTAINER_NAME"
+echo "  cuFile Config: $CUFILE_CONFIG_PATH"
 echo "  Target: $TARGET"
 if [ -n "$DURATION" ]; then
     echo "  Duration: ${DURATION}s"
