@@ -16,7 +16,7 @@ const (
 	DefaultHFHome    = "/mnt/weka/hf_cache"
 
 	// LMCache Configuration Defaults
-	DefaultLMCachePath            = "/mnt/weka/cache"
+	DefaultLMCacheWekaPath        = "/mnt/weka/cache"
 	DefaultLMCacheChunkSize       = 256
 	DefaultLMCacheGDSThreads      = 32
 	DefaultLMCacheCuFileBuffer    = "8192"

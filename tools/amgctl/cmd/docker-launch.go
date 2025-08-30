@@ -103,7 +103,7 @@ Examples:
 		fmt.Printf("  Max Model Length: %d\n", viper.GetInt("max-model-len"))
 		fmt.Printf("  Max Batched Tokens: %d\n", viper.GetInt("max-num-batched-tokens"))
 		fmt.Printf("  Port: %d\n", viper.GetInt("port"))
-		fmt.Printf("  LMCache Path: %s\n", viper.GetString("lmcache-path"))
+		fmt.Printf("  LMCache Path: %s\n", viper.GetString("lmcache-weka-path"))
 		fmt.Printf("  LMCache Chunk Size: %d\n", viper.GetInt("lmcache-chunk-size"))
 		fmt.Printf("  LMCache GDS Threads: %d\n", viper.GetInt("lmcache-gds-threads"))
 		fmt.Printf("  LMCache cuFile Buffer Size: %s\n", viper.GetString("lmcache-cufile-buffer-size"))
@@ -189,14 +189,14 @@ func generateDockerHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier, c
 	}
 
 	// LMCache environment variables
-	lmcachePath := viper.GetString("lmcache-path")
+	lmcacheWekaPath := viper.GetString("lmcache-weka-path")
 	lmcacheChunkSize := viper.GetInt("lmcache-chunk-size")
 	lmcacheGdsThreads := viper.GetInt("lmcache-gds-threads")
 	lmcacheCufileBufferSize := viper.GetString("lmcache-cufile-buffer-size")
 	lmcacheLocalCpu := viper.GetBool("lmcache-local-cpu")
 	lmcacheSaveDecodeCache := viper.GetBool("lmcache-save-decode-cache")
 
-	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_PATH=%s", lmcachePath))
+	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_WEKA_PATH=%s", lmcacheWekaPath))
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_CHUNK_SIZE=%d", lmcacheChunkSize))
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_EXTRA_CONFIG={\"gds_io_threads\": %d}", lmcacheGdsThreads))
 	cmd = append(cmd, "-e", fmt.Sprintf("LMCACHE_CUFILE_BUFFER_SIZE=%s", lmcacheCufileBufferSize))
@@ -306,9 +306,9 @@ func buildDockerHostLaunchCommand(cobraCmd *cobra.Command, modelIdentifier strin
 	}
 
 	// Add LMCache configuration flags
-	if cobraCmd.Flags().Changed("lmcache-path") {
-		lmcachePath := viper.GetString("lmcache-path")
-		hostCmd = append(hostCmd, "--lmcache-path", lmcachePath)
+	if cobraCmd.Flags().Changed("lmcache-weka-path") {
+		lmcacheWekaPath := viper.GetString("lmcache-weka-path")
+		hostCmd = append(hostCmd, "--lmcache-weka-path", lmcacheWekaPath)
 	}
 
 	if cobraCmd.Flags().Changed("lmcache-chunk-size") {
@@ -452,7 +452,7 @@ func init() {
 
 	// Add LMCache configuration flags
 	// Note: No default values - these are passed through to 'amgctl host launch' which defines the defaults
-	dockerLaunchCmd.PersistentFlags().String("lmcache-path", "", "Path for the cache within the Weka mount")
+	dockerLaunchCmd.PersistentFlags().String("lmcache-weka-path", "", "Path for the cache within the Weka mount")
 	dockerLaunchCmd.PersistentFlags().Int("lmcache-chunk-size", 0, "LMCache chunk size")
 	dockerLaunchCmd.PersistentFlags().Int("lmcache-gds-threads", 0, "LMCache GDS threads")
 	dockerLaunchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", "", "LMCache cuFile buffer size")
@@ -490,7 +490,7 @@ func init() {
 	_ = viper.BindPFlag("tensor-parallel-size", dockerLaunchCmd.PersistentFlags().Lookup("tensor-parallel-size"))
 	_ = viper.BindPFlag("docker-image", dockerLaunchCmd.PersistentFlags().Lookup("docker-image"))
 	_ = viper.BindPFlag("dry-run", dockerLaunchCmd.PersistentFlags().Lookup("dry-run"))
-	_ = viper.BindPFlag("lmcache-path", dockerLaunchCmd.PersistentFlags().Lookup("lmcache-path"))
+	_ = viper.BindPFlag("lmcache-weka-path", dockerLaunchCmd.PersistentFlags().Lookup("lmcache-weka-path"))
 	_ = viper.BindPFlag("lmcache-chunk-size", dockerLaunchCmd.PersistentFlags().Lookup("lmcache-chunk-size"))
 	_ = viper.BindPFlag("lmcache-gds-threads", dockerLaunchCmd.PersistentFlags().Lookup("lmcache-gds-threads"))
 	_ = viper.BindPFlag("lmcache-cufile-buffer-size", dockerLaunchCmd.PersistentFlags().Lookup("lmcache-cufile-buffer-size"))

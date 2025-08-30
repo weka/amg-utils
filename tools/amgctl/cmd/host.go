@@ -183,7 +183,7 @@ func init() {
 	hostLaunchCmd.PersistentFlags().Bool("dry-run", false, "Print the vLLM command that would be executed without actually running it")
 
 	// Add LMCache configuration flags
-	hostLaunchCmd.PersistentFlags().String("lmcache-path", DefaultLMCachePath, "Path for the cache within the Weka mount")
+	hostLaunchCmd.PersistentFlags().String("lmcache-weka-path", DefaultLMCacheWekaPath, "Path for the cache within the Weka mount")
 	hostLaunchCmd.PersistentFlags().Int("lmcache-chunk-size", DefaultLMCacheChunkSize, "LMCache chunk size")
 	hostLaunchCmd.PersistentFlags().Int("lmcache-gds-threads", DefaultLMCacheGDSThreads, "LMCache GDS threads")
 	hostLaunchCmd.PersistentFlags().String("lmcache-cufile-buffer-size", DefaultLMCacheCuFileBuffer, "LMCache cuFile buffer size")
@@ -219,7 +219,7 @@ func init() {
 	_ = viper.BindPFlag("gpu-slots", hostLaunchCmd.PersistentFlags().Lookup("gpu-slots"))
 	_ = viper.BindPFlag("tensor-parallel-size", hostLaunchCmd.PersistentFlags().Lookup("tensor-parallel-size"))
 	_ = viper.BindPFlag("dry-run", hostLaunchCmd.PersistentFlags().Lookup("dry-run"))
-	_ = viper.BindPFlag("lmcache-path", hostLaunchCmd.PersistentFlags().Lookup("lmcache-path"))
+	_ = viper.BindPFlag("lmcache-weka-path", hostLaunchCmd.PersistentFlags().Lookup("lmcache-weka-path"))
 	_ = viper.BindPFlag("lmcache-chunk-size", hostLaunchCmd.PersistentFlags().Lookup("lmcache-chunk-size"))
 	_ = viper.BindPFlag("lmcache-gds-threads", hostLaunchCmd.PersistentFlags().Lookup("lmcache-gds-threads"))
 	_ = viper.BindPFlag("lmcache-cufile-buffer-size", hostLaunchCmd.PersistentFlags().Lookup("lmcache-cufile-buffer-size"))
@@ -1812,7 +1812,7 @@ func runHostLaunch(modelIdentifier string) error {
 	fmt.Printf("  Max Model Length: %d\n", viper.GetInt("max-model-len"))
 	fmt.Printf("  Max Batched Tokens: %d\n", viper.GetInt("max-num-batched-tokens"))
 	fmt.Printf("  Port: %d\n", viper.GetInt("port"))
-	fmt.Printf("  LMCache Path: %s\n", viper.GetString("lmcache-path"))
+	fmt.Printf("  LMCache Path: %s\n", viper.GetString("lmcache-weka-path"))
 	fmt.Printf("  LMCache Chunk Size: %d\n", viper.GetInt("lmcache-chunk-size"))
 	fmt.Printf("  LMCache GDS Threads: %d\n", viper.GetInt("lmcache-gds-threads"))
 	fmt.Printf("  LMCache cuFile Buffer Size: %s\n", viper.GetString("lmcache-cufile-buffer-size"))
@@ -2047,14 +2047,14 @@ func setupHostEnvironmentVariables(cudaVisibleDevices string) ([]string, error) 
 	}
 
 	// LMCache environment variables
-	lmcachePath := viper.GetString("lmcache-path")
+	lmcacheWekaPath := viper.GetString("lmcache-weka-path")
 	lmcacheChunkSize := viper.GetInt("lmcache-chunk-size")
 	lmcacheGdsThreads := viper.GetInt("lmcache-gds-threads")
 	lmcacheCufileBufferSize := viper.GetString("lmcache-cufile-buffer-size")
 	lmcacheLocalCpu := viper.GetBool("lmcache-local-cpu")
 	lmcacheSaveDecodeCache := viper.GetBool("lmcache-save-decode-cache")
 
-	envVars = append(envVars, fmt.Sprintf("LMCACHE_PATH=%s", lmcachePath))
+	envVars = append(envVars, fmt.Sprintf("LMCACHE_WEKA_PATH=%s", lmcacheWekaPath))
 	envVars = append(envVars, fmt.Sprintf("LMCACHE_CHUNK_SIZE=%d", lmcacheChunkSize))
 	envVars = append(envVars, fmt.Sprintf("LMCACHE_EXTRA_CONFIG={\"gds_io_threads\": %d}", lmcacheGdsThreads))
 	envVars = append(envVars, fmt.Sprintf("LMCACHE_CUFILE_BUFFER_SIZE=%s", lmcacheCufileBufferSize))
