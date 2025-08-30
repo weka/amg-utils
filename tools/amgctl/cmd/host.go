@@ -1045,6 +1045,18 @@ func runGDSChecks() error {
 
 	// Run gdscheck -p
 	cmd := exec.Command(gdsCheckPath, "-p")
+
+	// Check for cufile.json and add CUFILE_ENV_PATH_JSON if it exists
+	basePath := getBasePath()
+	cufilePath := filepath.Join(basePath, "cufile.json")
+	if _, err := os.Stat(cufilePath); err == nil {
+		// Set environment variable for gdscheck to use our cufile.json
+		env := os.Environ()
+		env = append(env, fmt.Sprintf("CUFILE_ENV_PATH_JSON=%s", cufilePath))
+		cmd.Env = env
+		fmt.Printf("✅ Found cufile.json, setting CUFILE_ENV_PATH_JSON=%s for gdscheck\n", cufilePath)
+	}
+
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to run gdscheck: %w", err)
