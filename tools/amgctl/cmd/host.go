@@ -356,6 +356,10 @@ func runHostSystemChecks() error {
 		return fmt.Errorf("nvidia_peermem module check failed: %w", err)
 	}
 
+	if err := checkNvidiaFsModule(); err != nil {
+		return fmt.Errorf("nvidia_fs module check failed: %w", err)
+	}
+
 	fmt.Println("✅ System checks completed")
 	return nil
 }
@@ -446,6 +450,21 @@ func checkNvidiaPeermemModule() error {
 	}
 
 	return fmt.Errorf("nvidia_peermem module found but not loaded. Please load it with: sudo modprobe %s", moduleName)
+}
+
+func checkNvidiaFsModule() error {
+	moduleName := "nvidia_fs"
+
+	if err := checkKernelModuleLoaded(moduleName); err == nil {
+		fmt.Println("✅ nvidia_fs module is loaded")
+		return nil
+	}
+
+	if err := checkKernelModuleExists(moduleName); err != nil {
+		return fmt.Errorf("nvidia_fs module not found. Please install the nvidia_fs module")
+	}
+
+	return fmt.Errorf("nvidia_fs module found but not loaded. Please load it with: sudo modprobe %s", moduleName)
 }
 
 func checkKernelModuleExists(moduleName string) error {
