@@ -8,6 +8,7 @@ WORKERS=48
 SIZE="2G"
 BLOCK_SIZE="1m"
 CONTAINER_NAME="amg"
+DURATION=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -27,6 +28,7 @@ usage() {
     echo "  -s SIZE     Test file size (default: 2G)"
     echo "  -b SIZE     Block size (default: 1m)"
     echo "  -c NAME     Container name (default: amg)"
+    echo "  -T SECONDS  Duration in seconds for gdsio execution (optional)"
     echo "  -h          Show this help"
     echo ""
     echo "EXAMPLES:"
@@ -34,6 +36,7 @@ usage() {
     echo "  $0 container               # Test in container only"
     echo "  $0 both                    # Test both and compare"
     echo "  $0 -p /weka -w 32 both     # Custom path and workers"
+    echo "  $0 -T 60 both              # Run each test for 60 seconds duration"
 }
 
 log() {
@@ -70,7 +73,8 @@ run_host_test() {
         -D ${WEKA_PATH}/gdsio5 -d 5 -n 1 -w $WORKERS \
         -D ${WEKA_PATH}/gdsio6 -d 6 -n 1 -w $WORKERS \
         -D ${WEKA_PATH}/gdsio7 -d 7 -n 1 -w $WORKERS \
-        -s $SIZE -i $BLOCK_SIZE -x 0 -I $io_flag
+        -s $SIZE -i $BLOCK_SIZE -x 0 -I $io_flag \
+        ${DURATION:+-T $DURATION}
 }
 
 run_container_test() {
@@ -99,7 +103,8 @@ run_container_test() {
             -D ${WEKA_PATH}/gdsio5 -d 5 -n 1 -w $WORKERS \
             -D ${WEKA_PATH}/gdsio6 -d 6 -n 1 -w $WORKERS \
             -D ${WEKA_PATH}/gdsio7 -d 7 -n 1 -w $WORKERS \
-            -s $SIZE -i $BLOCK_SIZE -x 0 -I $io_flag
+            -s $SIZE -i $BLOCK_SIZE -x 0 -I $io_flag \
+            ${DURATION:+-T $DURATION}
 }
 
 cleanup_files() {
@@ -112,13 +117,14 @@ cleanup_files() {
 }
 
 # Parse command line arguments
-while getopts "p:w:s:b:c:h" opt; do
+while getopts "p:w:s:b:c:T:h" opt; do
     case $opt in
         p) WEKA_PATH="$OPTARG" ;;
         w) WORKERS="$OPTARG" ;;
         s) SIZE="$OPTARG" ;;
         b) BLOCK_SIZE="$OPTARG" ;;
         c) CONTAINER_NAME="$OPTARG" ;;
+        T) DURATION="$OPTARG" ;;
         h) usage; exit 0 ;;
         *) usage; exit 1 ;;
     esac
@@ -150,6 +156,9 @@ echo "  File Size: $SIZE"
 echo "  Block Size: $BLOCK_SIZE"
 echo "  Container: $CONTAINER_NAME"
 echo "  Target: $TARGET"
+if [ -n "$DURATION" ]; then
+    echo "  Duration: ${DURATION}s"
+fi
 echo ""
 
 # Cleanup any existing test files
