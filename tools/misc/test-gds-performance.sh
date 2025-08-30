@@ -61,7 +61,7 @@ run_host_test() {
     
     export CUFILE_ENV_PATH_JSON="/etc/cufile.json"
     
-    sudo /usr/local/cuda/gds/tools/gdsio \
+    /usr/local/cuda/gds/tools/gdsio \
         -D ${WEKA_PATH}/gdsio0 -d 0 -n 0 -w $WORKERS \
         -D ${WEKA_PATH}/gdsio1 -d 1 -n 0 -w $WORKERS \
         -D ${WEKA_PATH}/gdsio2 -d 2 -n 0 -w $WORKERS \
