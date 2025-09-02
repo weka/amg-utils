@@ -1158,8 +1158,9 @@ func validateGDSOutput(output string) error {
 	// Validate all requirements
 	var errors []string
 
+	// NVMe check - warn if not supported but don't fail
 	if !requirements["nvme_supported"] {
-		errors = append(errors, "NVMe is not supported")
+		fmt.Println("⚠️  NVMe: Not supported - performance may not be optimal")
 	} else {
 		fmt.Println("✅ NVMe: Supported")
 	}
@@ -1194,8 +1195,9 @@ func validateGDSOutput(output string) error {
 		fmt.Println("✅ RDMA devices: Configured")
 	}
 
+	// IOMMU check - warn if not disabled but don't fail
 	if !requirements["iommu_disabled"] {
-		errors = append(errors, "IOMMU is not disabled (should be disabled for optimal GDS performance)")
+		fmt.Println("⚠️  IOMMU: Not disabled - performance may not be optimal")
 	} else {
 		fmt.Println("✅ IOMMU: Disabled")
 	}
