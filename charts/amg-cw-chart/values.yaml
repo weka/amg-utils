@@ -50,7 +50,7 @@ wekaAmg:
   image:
     repository: sdimitro509/amg
     tag: "latest"
-    pullPolicy: Always
+    pullPolicy: IfNotPresent
   
   # Resource configuration
   resources:
