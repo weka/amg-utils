@@ -5,5 +5,5 @@ dependencies:
 - name: network-operator
   repository: https://helm.ngc.nvidia.com/nvidia
   version: 25.7.0
-digest: sha256:2a48e63fc55ea53646d54c0d5bffbde5e9ba4c78c5ee1d12d84934d30d05c16f
-generated: "2025-08-25T15:00:31.156635015-04:00"
+digest: sha256:ddc6e5c41cc8452d938dbac6d4be8585900b4c03521766fd4860dcbf4cf0ad87
+generated: "2025-09-02T16:03:59.357889625-04:00"
