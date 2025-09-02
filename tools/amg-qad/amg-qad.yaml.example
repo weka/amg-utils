@@ -1,0 +1,11 @@
+# AMG-QAD Configuration Example
+# Copy this file to ~/.config/amg-qad.yaml or specify with --config flag
+
+# Time of day to run the QA suite (24-hour format HH:MM)
+test_time: "02:00"
+
+# Port for the web dashboard and API
+web_port: 8080
+
+# Path to store historical test results
+results_path: "./results"
