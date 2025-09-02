@@ -34,26 +34,36 @@ cd "${CHARTS_DIR}"
 echo "📦 Generating chart packages..."
 ./package-generate.sh
 
+# Get chart versions dynamically
+AMG_CHART_VERSION=$(grep '^version:' amg-chart/Chart.yaml | awk '{print $2}')
+AMG_CW_CHART_VERSION=$(grep '^version:' amg-cw-chart/Chart.yaml | awk '{print $2}')
+
+echo "📋 Detected chart versions:"
+echo "  amg-chart: ${AMG_CHART_VERSION}"
+echo "  amg-cw-chart: ${AMG_CW_CHART_VERSION}"
+
 # Push charts to OCI registry
 echo "⬆️  Pushing charts to ${OCI_REGISTRY}..."
 
 # Push amg-chart
-if [ -f "amg-chart-0.1.0.tgz" ]; then
-    echo "  Pushing amg-chart..."
-    helm push amg-chart-0.1.0.tgz "${OCI_REGISTRY}"
+AMG_CHART_PACKAGE="amg-chart-${AMG_CHART_VERSION}.tgz"
+if [ -f "${AMG_CHART_PACKAGE}" ]; then
+    echo "  Pushing ${AMG_CHART_PACKAGE}..."
+    helm push "${AMG_CHART_PACKAGE}" "${OCI_REGISTRY}"
     echo "  ✅ amg-chart published successfully"
 else
-    echo "  ❌ amg-chart package not found"
+    echo "  ❌ amg-chart package not found: ${AMG_CHART_PACKAGE}"
     exit 1
 fi
 
 # Push amg-cw-chart
-if [ -f "amg-cw-chart-0.1.0.tgz" ]; then
-    echo "  Pushing amg-cw-chart..."
-    helm push amg-cw-chart-0.1.0.tgz "${OCI_REGISTRY}"
+AMG_CW_CHART_PACKAGE="amg-cw-chart-${AMG_CW_CHART_VERSION}.tgz"
+if [ -f "${AMG_CW_CHART_PACKAGE}" ]; then
+    echo "  Pushing ${AMG_CW_CHART_PACKAGE}..."
+    helm push "${AMG_CW_CHART_PACKAGE}" "${OCI_REGISTRY}"
     echo "  ✅ amg-cw-chart published successfully"
 else
-    echo "  ❌ amg-cw-chart package not found"
+    echo "  ❌ amg-cw-chart package not found: ${AMG_CW_CHART_PACKAGE}"
     exit 1
 fi
 
@@ -63,5 +73,5 @@ rm -f *.tgz
 
 echo "🎉 All charts published successfully!"
 echo "📋 Installation commands:"
-echo "  helm install my-amg ${OCI_REGISTRY}/amg-chart --version 0.1.0"
-echo "  helm install my-amg-cw ${OCI_REGISTRY}/amg-cw-chart --version 0.1.0"
+echo "  helm install my-amg ${OCI_REGISTRY}/amg-chart --version ${AMG_CHART_VERSION}"
+echo "  helm install my-amg-cw ${OCI_REGISTRY}/amg-cw-chart --version ${AMG_CW_CHART_VERSION}"
