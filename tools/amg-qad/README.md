@@ -48,14 +48,19 @@ Create a configuration file at `~/.config/amg-qad.yaml`:
 
 ```yaml
 # Time of day to run tests (24-hour format HH:MM)
-test_time: "02:00"
+test_time: "23:59"
 
 # Port for the web dashboard
-web_port: 8080
+web_port: 9876
 
 # Path to store test results
-results_path: "./results"
+results_path: "/mnt/weka/amg-qad/results/"
 ```
+
+**Default Values (when no config file exists):**
+- `test_time`: `"23:59"` (just before midnight)
+- `web_port`: `9876`
+- `results_path`: `"/mnt/weka/amg-qad/results/"`
 
 You can also use the provided example:
 
@@ -79,6 +84,9 @@ make config
 
 # Start with custom configuration file
 ./amg-qad daemon --config /path/to/config.yaml
+
+# Run tests once and exit (for testing or CI/CD)
+./amg-qad daemon --run-once
 ```
 
 ### Environment Variables
@@ -95,7 +103,7 @@ export AMG_QAD_RESULTS_PATH="/var/lib/amg-qad/results"
 ## Web Dashboard
 
 Once the daemon is running, access the web dashboard at:
-- Default: http://localhost:8080
+- Default: http://localhost:9876
 - Custom port: http://localhost:YOUR_PORT
 
 The dashboard shows:
@@ -109,10 +117,10 @@ The dashboard shows:
 
 ```bash
 # Get last 10 results (default)
-curl http://localhost:8080/api/results
+curl http://localhost:9876/api/results
 
 # Get specific number of results (max 100)
-curl http://localhost:8080/api/results?limit=25
+curl http://localhost:9876/api/results?limit=25
 ```
 
 Response format:
@@ -129,19 +137,32 @@ Response format:
 
 ## Test Implementation
 
-Currently, AMG-QAD includes a placeholder test that:
-- Simulates test execution with random duration (1-3 seconds)
+AMG-QAD includes two test implementations:
+
+### 1. Placeholder Test (Default)
+- Simulates test execution with random duration (1-3 seconds)  
 - Has a 90% success rate (10% simulated failures)
 - Records execution time and basic logs
+- Reliable and fast for development
 
-### Future Test Integration
+### 2. AMGctl Integration Test
+- Downloads the latest `amgctl` binary from GitHub releases
+- Validates the binary version matches expected (0.1.16)
+- Records download time, execution logs, and validation results
+- Real integration test for the AMG ecosystem
 
-The architecture is designed to easily integrate real AMG tests:
+### Switching Test Types
 
-1. Download `amgctl` from the repository
-2. Execute various `amgctl` commands
-3. Analyze command output and exit codes
-4. Record detailed logs for failures
+```go
+// In scheduler configuration
+sched := scheduler.New(testTime, store)
+
+// Use placeholder test (default)
+sched.SetTestRunner(scheduler.NewPlaceholderTest())
+
+// Use real amgctl validation test  
+sched.SetTestRunner(scheduler.NewAmgctlTest())
+```
 
 ## File Structure
 
@@ -263,9 +284,9 @@ To add new test implementations:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `test_time` | string | "02:00" | Daily test execution time (HH:MM) |
-| `web_port` | int | 8080 | Web dashboard and API port |
-| `results_path` | string | "./results" | Directory for storing test results |
+| `test_time` | string | "23:59" | Daily test execution time (HH:MM) |
+| `web_port` | int | 9876 | Web dashboard and API port |
+| `results_path` | string | "/mnt/weka/amg-qad/results/" | Directory for storing test results |
 
 ## Releases
 

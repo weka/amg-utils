@@ -133,9 +133,9 @@ config:
 	@echo "Creating sample configuration file..."
 	@mkdir -p $(HOME)/.config
 	@echo "# AMG-QAD Configuration" > $(HOME)/.config/amg-qad.yaml
-	@echo "test_time: \"02:00\"      # Time to run tests (HH:MM format)" >> $(HOME)/.config/amg-qad.yaml
-	@echo "web_port: 8080          # Port for web dashboard" >> $(HOME)/.config/amg-qad.yaml
-	@echo "results_path: \"./results\"  # Path to store test results" >> $(HOME)/.config/amg-qad.yaml
+	@echo "test_time: \"23:59\"     # Time to run tests (HH:MM format)" >> $(HOME)/.config/amg-qad.yaml
+	@echo "web_port: 9876          # Port for web dashboard" >> $(HOME)/.config/amg-qad.yaml
+	@echo "results_path: \"/mnt/weka/amg-qad/results/\"  # Path to store test results" >> $(HOME)/.config/amg-qad.yaml
 	@echo "Configuration created at $(HOME)/.config/amg-qad.yaml"
 
 # Show help

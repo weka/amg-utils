@@ -24,9 +24,14 @@ func New(testTime string, store *storage.Storage) *Scheduler {
 	return &Scheduler{
 		testTime:   testTime,
 		storage:    store,
-		testRunner: NewPlaceholderTest(),
+		testRunner: NewPlaceholderTest(), // Use placeholder test by default for reliability
 		stopChan:   make(chan bool),
 	}
+}
+
+// SetTestRunner allows changing the test runner (for testing or configuration)
+func (s *Scheduler) SetTestRunner(runner TestRunner) {
+	s.testRunner = runner
 }
 
 // Start starts the scheduler
@@ -64,7 +69,9 @@ func (s *Scheduler) run() {
 
 		select {
 		case <-time.After(waitDuration):
-			s.executeTest()
+			if err := s.executeTest(); err != nil {
+				log.Printf("Test execution failed: %v", err)
+			}
 		case <-s.stopChan:
 			log.Println("Scheduler stopped")
 			return
@@ -92,8 +99,13 @@ func (s *Scheduler) getNextRunTime() time.Time {
 	return today
 }
 
+// ExecuteTest runs the test immediately (public method for run-once mode)
+func (s *Scheduler) ExecuteTest() error {
+	return s.executeTest()
+}
+
 // executeTest runs the test and stores the result
-func (s *Scheduler) executeTest() {
+func (s *Scheduler) executeTest() error {
 	log.Println("Executing scheduled test...")
 
 	passed, duration, logs, err := s.testRunner.RunTest()
@@ -113,7 +125,7 @@ func (s *Scheduler) executeTest() {
 
 	if err := s.storage.SaveResult(result); err != nil {
 		log.Printf("Failed to save test result: %v", err)
-		return
+		return fmt.Errorf("failed to save test result: %w", err)
 	}
 
 	status := "PASSED"
@@ -122,4 +134,5 @@ func (s *Scheduler) executeTest() {
 	}
 
 	log.Printf("Test completed: %s (duration: %v)", status, duration)
+	return nil
 }

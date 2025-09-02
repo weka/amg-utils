@@ -2,10 +2,13 @@
 # Copy this file to ~/.config/amg-qad.yaml or specify with --config flag
 
 # Time of day to run the QA suite (24-hour format HH:MM)
-test_time: "02:00"
+# Default: "23:59"
+test_time: "23:59"
 
 # Port for the web dashboard and API
-web_port: 8080
+# Default: 9876
+web_port: 9876
 
 # Path to store historical test results
-results_path: "./results"
+# Default: "/mnt/weka/amg-qad/results/"
+results_path: "/mnt/weka/amg-qad/results/"
