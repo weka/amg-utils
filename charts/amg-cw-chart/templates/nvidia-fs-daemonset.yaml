@@ -1,0 +1,81 @@
+{{- if .Values.nvidiaFs.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "amg-cw-chart.nvidiafs.name" . }}
+  labels:
+    {{- include "amg-cw-chart.nvidiafs.labels" . | nindent 4 }}
+  {{- with .Values.additionalAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "amg-cw-chart.nvidiafs.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "amg-cw-chart.nvidiafs.selectorLabels" . | nindent 8 }}
+      {{- with .Values.additionalAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      hostNetwork: true
+      containers:
+        - name: install-nvidiafs
+          image: {{ .Values.nvidiaFs.image.repository }}:{{ .Values.nvidiaFs.image.tag }}
+          imagePullPolicy: {{ .Values.nvidiaFs.image.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              bash <<EOF
+              chroot /host
+              export KERNEL_VERSION={{ .Values.nvidiaFs.kernelVersion }}
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y curl wget iputils-ping net-tools dnsutils tcpdump nmap netcat procps lsof vim htop nvme-cli iproute2 kmod hwloc less
+              cd /opt/k8s-weka
+              wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+              dpkg -i --force-confnew cuda-keyring_1.1-1_all.deb
+              apt-get update
+              apt install -y nvidia-gds={{ .Values.nvidiaFs.nvidiaGdsVersion }}
+              modprobe nvidia_fs
+              lsmod | grep nvidia_fs
+              sleep infinity
+              EOF
+          resources:
+            {{- toYaml .Values.nvidiaFs.resources | nindent 12 }}
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: host-filesystem
+              mountPath: /host
+            - name: host-dev
+              mountPath: /dev
+            - name: host-sys
+              mountPath: /sys
+          {{- with .Values.nvidiaFs.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: host-filesystem
+          hostPath:
+            path: /
+        - name: host-dev
+          hostPath:
+            path: /dev
+        - name: host-sys
+          hostPath:
+            path: /sys
+      {{- with .Values.nvidiaFs.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nvidiaFs.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
