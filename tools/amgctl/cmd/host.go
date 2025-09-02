@@ -230,7 +230,7 @@ func init() {
 	_ = viper.BindPFlag("no-prometheus", hostLaunchCmd.PersistentFlags().Lookup("no-prometheus"))
 	_ = viper.BindPFlag("no-enable-prefix-caching", hostLaunchCmd.PersistentFlags().Lookup("no-enable-prefix-caching"))
 	_ = viper.BindPFlag("skip-safefasttensors", hostLaunchCmd.PersistentFlags().Lookup("skip-safefasttensors"))
-	_ = viper.BindPFlag("generate-cufile-json", hostLaunchCmd.PersistentFlags().Lookup("generate-cufile-json"))
+	_ = viper.BindPFlag("skip-cufile-configure", hostLaunchCmd.PersistentFlags().Lookup("skip-cufile-configure"))
 	_ = viper.BindPFlag("vllm-arg", hostLaunchCmd.PersistentFlags().Lookup("vllm-arg"))
 	_ = viper.BindPFlag("vllm-env", hostLaunchCmd.PersistentFlags().Lookup("vllm-env"))
 }
@@ -1772,9 +1772,9 @@ func runHostLaunch(modelIdentifier string) error {
 		return err
 	}
 
-	// Generate cufile.json if requested (but not in dry-run mode)
-	generateCufile := viper.GetBool("generate-cufile-json")
-	if generateCufile {
+	// Generate cufile.json unless skipped (but not in dry-run mode)
+	skipCufileConfigure := viper.GetBool("skip-cufile-configure")
+	if !skipCufileConfigure {
 		if dryRun {
 			fmt.Println("🔍 Dry Run Mode: Would generate cufile.json for optimal GDS performance")
 		} else {
