@@ -4,9 +4,8 @@ FROM nvidia/cuda:12.9.1-devel-ubuntu24.04
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-# TODO: Support more architectures besides Hopper
-# TODO: Do we actually need to set that anymore? Check!
-ENV TORCH_CUDA_ARCH_LIST="9.0"
+# Add support for new architectures here
+ENV TORCH_CUDA_ARCH_LIST="9.0 10.0+PTX"
 ENV FORCE_CUDA="1"
 ENV CUDA_HOME=/usr/local/cuda
 ENV NVIDIA_GDS=enabled
