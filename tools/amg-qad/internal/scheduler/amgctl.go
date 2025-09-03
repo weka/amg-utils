@@ -21,9 +21,14 @@ type AmgctlTest struct {
 // NewAmgctlTest creates a new amgctl validation test
 func NewAmgctlTest() *AmgctlTest {
 	return &AmgctlTest{
-		Name:            "AMGctl GitHub Version Validation",
+		Name:            "amgctl_integration_test",
 		ExpectedVersion: "0.1.16",
 	}
+}
+
+// GetName returns the test name
+func (t *AmgctlTest) GetName() string {
+	return t.Name
 }
 
 // RunTest downloads amgctl from GitHub and validates its version

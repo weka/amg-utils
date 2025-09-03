@@ -122,13 +122,7 @@ func (s *Scheduler) executeTest() error {
 	var individualTests []storage.IndividualTest
 
 	for i, testRunner := range s.testRunners {
-		testName := fmt.Sprintf("test-%d", i+1)
-		if _, ok := testRunner.(*PlaceholderTest); ok {
-			testName = "placeholder_test"
-		}
-		if _, ok := testRunner.(*AmgctlTest); ok {
-			testName = "amgctl_integration_test"
-		}
+		testName := testRunner.GetName()
 
 		log.Printf("Running test %d/%d: %s", i+1, len(s.testRunners), testName)
 

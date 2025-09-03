@@ -9,6 +9,7 @@ import (
 // TestRunner defines the interface for running tests
 type TestRunner interface {
 	RunTest() (passed bool, duration time.Duration, logs string, err error)
+	GetName() string
 }
 
 // PlaceholderTest is a simple test implementation that serves as a placeholder
@@ -19,8 +20,13 @@ type PlaceholderTest struct {
 // NewPlaceholderTest creates a new placeholder test
 func NewPlaceholderTest() *PlaceholderTest {
 	return &PlaceholderTest{
-		Name: "AMG Environment Health Check",
+		Name: "placeholder_test",
 	}
+}
+
+// GetName returns the test name
+func (t *PlaceholderTest) GetName() string {
+	return t.Name
 }
 
 // RunTest executes the placeholder test
