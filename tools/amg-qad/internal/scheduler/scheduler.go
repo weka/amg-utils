@@ -20,13 +20,13 @@ type Scheduler struct {
 }
 
 // New creates a new scheduler with both test runners
-func New(testTime string, store *storage.Storage) *Scheduler {
+func New(testTime string, store *storage.Storage, version string) *Scheduler {
 	return &Scheduler{
 		testTime: testTime,
 		storage:  store,
 		testRunners: []TestRunner{
-			NewPlaceholderTest(), // Fast, reliable test
-			NewAmgctlTest(),      // Real integration test
+			NewPlaceholderTest(),                    // Fast, reliable test
+			NewAmgctlFetchLatestTest(version),       // Real integration test
 		},
 		stopChan: make(chan bool),
 	}

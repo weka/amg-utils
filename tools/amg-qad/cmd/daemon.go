@@ -54,7 +54,7 @@ func runDaemon(runOnce bool) error {
 	}
 
 	// Initialize scheduler
-	sched := scheduler.New(cfg.TestTime, store)
+	sched := scheduler.New(cfg.TestTime, store, version)
 
 	if runOnce {
 		log.Println("Running in --run-once mode")

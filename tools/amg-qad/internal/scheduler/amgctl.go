@@ -11,28 +11,28 @@ import (
 	"time"
 )
 
-// AmgctlTest validates the amgctl binary from GitHub
-type AmgctlTest struct {
+// AmgctlFetchLatestTest validates the amgctl binary from GitHub
+type AmgctlFetchLatestTest struct {
 	Name            string
 	ExpectedVersion string
 	TempDir         string
 }
 
-// NewAmgctlTest creates a new amgctl validation test
-func NewAmgctlTest() *AmgctlTest {
-	return &AmgctlTest{
-		Name:            "amgctl_integration_test",
-		ExpectedVersion: "0.1.16",
+// NewAmgctlFetchLatestTest creates a new amgctl validation test
+func NewAmgctlFetchLatestTest(expectedVersion string) *AmgctlFetchLatestTest {
+	return &AmgctlFetchLatestTest{
+		Name:            "amgctl_fetch_latest_test",
+		ExpectedVersion: expectedVersion,
 	}
 }
 
 // GetName returns the test name
-func (t *AmgctlTest) GetName() string {
+func (t *AmgctlFetchLatestTest) GetName() string {
 	return t.Name
 }
 
 // RunTest downloads amgctl from GitHub and validates its version
-func (t *AmgctlTest) RunTest() (bool, time.Duration, string, error) {
+func (t *AmgctlFetchLatestTest) RunTest() (bool, time.Duration, string, error) {
 	start := time.Now()
 	var logs strings.Builder
 
@@ -95,7 +95,7 @@ func (t *AmgctlTest) RunTest() (bool, time.Duration, string, error) {
 }
 
 // downloadAmgctl downloads the latest amgctl binary from GitHub
-func (t *AmgctlTest) downloadAmgctl(filepath string, logs *strings.Builder) error {
+func (t *AmgctlFetchLatestTest) downloadAmgctl(filepath string, logs *strings.Builder) error {
 	// Direct URL to latest amgctl binary (much simpler!)
 	binaryURL := "https://github.com/weka/amg-utils/releases/latest/download/amgctl-linux-amd64"
 
@@ -136,7 +136,7 @@ func (t *AmgctlTest) downloadAmgctl(filepath string, logs *strings.Builder) erro
 }
 
 // getVersion runs the binary and extracts its version
-func (t *AmgctlTest) getVersion(binaryPath string, logs *strings.Builder) (string, error) {
+func (t *AmgctlFetchLatestTest) getVersion(binaryPath string, logs *strings.Builder) (string, error) {
 	fmt.Fprintf(logs, "Running: %s --version\n", binaryPath)
 
 	cmd := exec.Command(binaryPath, "--version")
@@ -163,7 +163,7 @@ func (t *AmgctlTest) getVersion(binaryPath string, logs *strings.Builder) (strin
 }
 
 // validateVersion checks if the actual version matches expected
-func (t *AmgctlTest) validateVersion(actualVersion string, logs *strings.Builder) bool {
+func (t *AmgctlFetchLatestTest) validateVersion(actualVersion string, logs *strings.Builder) bool {
 	fmt.Fprintf(logs, "Validating version: actual='%s', expected='%s'\n", actualVersion, t.ExpectedVersion)
 
 	return actualVersion == t.ExpectedVersion

@@ -10,6 +10,11 @@ import (
 
 const version = "0.1.16"
 
+// GetVersion returns the current application version
+func GetVersion() string {
+	return version
+}
+
 var (
 	cfgFile string
 	rootCmd = &cobra.Command{

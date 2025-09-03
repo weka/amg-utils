@@ -145,9 +145,9 @@ AMG-QAD includes two test implementations:
 - Records execution time and basic logs
 - Reliable and fast for development
 
-### 2. AMGctl Integration Test
+### 2. AMGctl Fetch Latest Test
 - Downloads the latest `amgctl` binary from GitHub releases
-- Validates the binary version matches expected (0.1.16)
+- Validates the binary version matches the current amg-qad version
 - Records download time, execution logs, and validation results
 - Real integration test for the AMG ecosystem
 
@@ -155,13 +155,13 @@ AMG-QAD includes two test implementations:
 
 ```go
 // In scheduler configuration
-sched := scheduler.New(testTime, store)
+sched := scheduler.New(testTime, store, version)
 
 // Use placeholder test (default)
 sched.SetTestRunner(scheduler.NewPlaceholderTest())
 
 // Use real amgctl validation test  
-sched.SetTestRunner(scheduler.NewAmgctlTest())
+sched.SetTestRunner(scheduler.NewAmgctlFetchLatestTest(version))
 ```
 
 ## File Structure
