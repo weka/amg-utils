@@ -113,11 +113,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
             
             if (testsRow.classList.contains('expanded')) {
                 testsRow.classList.remove('expanded');
-                icon.textContent = '▶';
+                icon.textContent = '[+]';
                 icon.classList.remove('expanded');
             } else {
                 testsRow.classList.add('expanded');
-                icon.textContent = '▼';
+                icon.textContent = '[-]';
                 icon.classList.add('expanded');
             }
         }
@@ -173,7 +173,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     </td>
                     <td class="duration">{{.Duration}}</td>
                     <td>
-                        <span class="expand-icon" id="icon-{{$index}}">▶</span>
+                        <span class="expand-icon" id="icon-{{$index}}">[+]</span>
                         {{.Parameters}} ({{.TestCount}} tests)
                     </td>
                 </tr>
