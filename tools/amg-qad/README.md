@@ -130,39 +130,32 @@ Response format:
     "timestamp": "2024-01-15T02:00:05Z",
     "status": "passed",
     "duration": "2.5s",
-    "parameters": "placeholder_test"
+    "parameters": "test_suite_2_tests"
   }
 ]
 ```
 
-## Test Implementation
+## Test Framework
 
-AMG-QAD includes two test implementations:
+AMG-QAD uses a pluggable test framework based on the `TestRunner` interface. Tests are automatically discovered and executed by the scheduler.
 
-### 1. Placeholder Test (Default)
-- Simulates test execution with random duration (1-3 seconds)  
-- Has a 90% success rate (10% simulated failures)
-- Records execution time and basic logs
-- Reliable and fast for development
+### Adding New Tests
 
-### 2. AMGctl Fetch Latest Test
-- Downloads the latest `amgctl` binary from GitHub releases
-- Validates the binary version matches the current amg-qad version
-- Records download time, execution logs, and validation results
-- Real integration test for the AMG ecosystem
-
-### Switching Test Types
+To add a new test, implement the `TestRunner` interface:
 
 ```go
-// In scheduler configuration
-sched := scheduler.New(testTime, store, version)
-
-// Use placeholder test (default)
-sched.SetTestRunner(scheduler.NewPlaceholderTest())
-
-// Use real amgctl validation test  
-sched.SetTestRunner(scheduler.NewAmgctlFetchLatestTest(version))
+type TestRunner interface {
+    RunTest() (passed bool, duration time.Duration, logs string, err error)
+    GetName() string
+}
 ```
+
+The scheduler will automatically execute all registered tests and aggregate the results. Each test is responsible for:
+- Defining its own name via `GetName()`
+- Implementing the test logic in `RunTest()`
+- Returning test results (pass/fail, duration, logs)
+
+Tests can be added to the scheduler during initialization or dynamically using the `AddTestRunner()` method.
 
 ## File Structure
 
@@ -331,7 +324,7 @@ Results are stored in JSON Lines format in `results_path/results.jsonl`. Each li
   "timestamp": "2024-01-15T02:00:05Z",
   "passed": true,
   "duration": "2.5s", 
-  "parameters": "placeholder_test",
-  "logs": "Test completed successfully..."
+  "parameters": "test_suite_2_tests",
+  "logs": "Test Suite Summary:\n2 tests executed in 2.5s\nOverall result: true\n\n=== test_1 ===\nTest logs...\n"
 }
 ```
