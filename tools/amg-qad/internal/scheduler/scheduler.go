@@ -25,7 +25,6 @@ func New(testTime string, store *storage.Storage, version string) *Scheduler {
 		testTime: testTime,
 		storage:  store,
 		testRunners: []TestRunner{
-			NewPlaceholderTest(),                  // Fast, reliable test
 			NewAmgctlFetchLatestTest(version),     // Real integration test
 			NewAmgctlUpgradeToLatestTest(version), // Upgrade functionality test
 		},
