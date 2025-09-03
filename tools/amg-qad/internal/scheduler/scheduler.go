@@ -119,6 +119,7 @@ func (s *Scheduler) executeTest() error {
 	overallStart := time.Now()
 	allPassed := true
 	var combinedLogs strings.Builder
+	var individualTests []storage.IndividualTest
 
 	for i, testRunner := range s.testRunners {
 		testName := fmt.Sprintf("test-%d", i+1)
@@ -133,25 +134,19 @@ func (s *Scheduler) executeTest() error {
 
 		passed, duration, logs, err := testRunner.RunTest()
 
-		// Create individual result for this test
-		result := storage.TestResult{
-			Timestamp:  time.Now(),
-			Passed:     passed,
-			Duration:   duration.String(),
-			Parameters: testName,
-			Logs:       logs,
-		}
-
 		if err != nil {
-			result.Passed = false
-			result.Logs = fmt.Sprintf("Test execution error: %v\n%s", err, logs)
+			passed = false
+			logs = fmt.Sprintf("Test execution error: %v\n%s", err, logs)
 		}
 
-		// Save individual test result
-		if err := s.storage.SaveResult(result); err != nil {
-			log.Printf("Failed to save test result for %s: %v", testName, err)
-			// Continue with other tests even if one fails to save
+		// Create individual test record for embedding in test suite
+		individualTest := storage.IndividualTest{
+			Name:     testName,
+			Passed:   passed,
+			Duration: duration.String(),
+			Logs:     logs,
 		}
+		individualTests = append(individualTests, individualTest)
 
 		// Track overall status
 		if !passed {
@@ -171,18 +166,19 @@ func (s *Scheduler) executeTest() error {
 
 	overallDuration := time.Since(overallStart)
 
-	// Create summary result
-	summaryResult := storage.TestResult{
+	// Create test suite result with embedded individual tests
+	suiteResult := storage.TestResult{
 		Timestamp:  time.Now(),
 		Passed:     allPassed,
 		Duration:   overallDuration.String(),
 		Parameters: fmt.Sprintf("test_suite_%d_tests", len(s.testRunners)),
 		Logs:       fmt.Sprintf("Test Suite Summary:\n%d tests executed in %v\nOverall result: %t\n\n%s", len(s.testRunners), overallDuration, allPassed, combinedLogs.String()),
+		Tests:      individualTests, // Embed individual test results
 	}
 
-	if err := s.storage.SaveResult(summaryResult); err != nil {
-		log.Printf("Failed to save summary result: %v", err)
-		return fmt.Errorf("failed to save summary result: %w", err)
+	if err := s.storage.SaveResult(suiteResult); err != nil {
+		log.Printf("Failed to save test suite result: %v", err)
+		return fmt.Errorf("failed to save test suite result: %w", err)
 	}
 
 	status := "PASSED"

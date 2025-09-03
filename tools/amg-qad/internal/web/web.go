@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -92,11 +93,35 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
         .refresh { margin-bottom: 20px; }
         .refresh button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
         .refresh button:hover { background: #0056b3; }
+        .test-suite-row { cursor: pointer; background: #f8f9fa; }
+        .test-suite-row:hover { background: #e9ecef; }
+        .individual-tests { display: none; }
+        .individual-tests.expanded { display: table-row-group; }
+        .individual-test-row { background: #ffffff; border-left: 4px solid #007bff; }
+        .individual-test-row td { padding-left: 30px; font-size: 0.9em; color: #666; }
+        .expand-icon { margin-right: 8px; transition: transform 0.2s; }
+        .expand-icon.expanded { transform: rotate(90deg); }
     </style>
     <script>
         function refreshData() {
             location.reload();
         }
+        
+        function toggleTests(index) {
+            const testsRow = document.getElementById('tests-' + index);
+            const icon = document.getElementById('icon-' + index);
+            
+            if (testsRow.classList.contains('expanded')) {
+                testsRow.classList.remove('expanded');
+                icon.textContent = '▶';
+                icon.classList.remove('expanded');
+            } else {
+                testsRow.classList.add('expanded');
+                icon.textContent = '▼';
+                icon.classList.add('expanded');
+            }
+        }
+        
         // Auto-refresh every 30 seconds
         setInterval(refreshData, 30000);
     </script>
@@ -140,15 +165,36 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 </tr>
             </thead>
             <tbody>
-                {{range .Results}}
-                <tr>
+                {{range $index, $suite := .Results}}
+                <tr class="test-suite-row" onclick="toggleTests({{$index}})">
                     <td class="timestamp">{{.FormattedTime}}</td>
                     <td class="{{if .Passed}}status-passed{{else}}status-failed{{end}}">
-                        {{if .Passed}}✓ PASSED{{else}}✗ FAILED{{end}}
+                        {{if .Passed}}PASSED{{else}}FAILED{{end}}
                     </td>
                     <td class="duration">{{.Duration}}</td>
-                    <td>{{.Parameters}}</td>
+                    <td>
+                        <span class="expand-icon" id="icon-{{$index}}">▶</span>
+                        {{.Parameters}} ({{.TestCount}} tests)
+                    </td>
                 </tr>
+                {{if .IndividualTests}}
+                <tr class="individual-tests" id="tests-{{$index}}">
+                    <td colspan="4" style="padding: 0;">
+                        <table style="width: 100%; margin: 0;">
+                            {{range .IndividualTests}}
+                            <tr class="individual-test-row">
+                                <td class="timestamp" style="width: 25%;"></td>
+                                <td class="{{if .Passed}}status-passed{{else}}status-failed{{end}}" style="width: 25%;">
+                                    {{if .Passed}}PASSED{{else}}FAILED{{end}}
+                                </td>
+                                <td class="duration" style="width: 25%;">{{.Duration}}</td>
+                                <td style="width: 25%;">{{.Name}}</td>
+                            </tr>
+                            {{end}}
+                        </table>
+                    </td>
+                </tr>
+                {{end}}
                 {{end}}
             </tbody>
         </table>
@@ -180,17 +226,39 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 func (s *Server) prepareDashboardData(results []storage.TestResult) map[string]interface{} {
 	data := make(map[string]interface{})
 
-	// Process results
+	// Filter to only show test suite results (not individual tests)
+	var suiteResults []storage.TestResult
+	for _, result := range results {
+		if strings.HasPrefix(result.Parameters, "test_suite_") {
+			suiteResults = append(suiteResults, result)
+		}
+	}
+
+	// Process suite results for display
 	var processedResults []map[string]interface{}
 	passed := 0
-	total := len(results)
+	total := len(suiteResults)
 
-	for _, result := range results {
+	for _, result := range suiteResults {
+		// Prepare individual tests for expansion
+		var individualTests []map[string]interface{}
+		for _, test := range result.Tests {
+			individualTest := map[string]interface{}{
+				"Name":     test.Name,
+				"Passed":   test.Passed,
+				"Duration": test.Duration,
+				"Logs":     test.Logs,
+			}
+			individualTests = append(individualTests, individualTest)
+		}
+
 		processedResult := map[string]interface{}{
-			"FormattedTime": result.Timestamp.Format("2006-01-02 15:04:05"),
-			"Passed":        result.Passed,
-			"Duration":      result.Duration,
-			"Parameters":    result.Parameters,
+			"FormattedTime":   result.Timestamp.Format("2006-01-02 15:04:05"),
+			"Passed":          result.Passed,
+			"Duration":        result.Duration,
+			"Parameters":      result.Parameters,
+			"TestCount":       len(result.Tests),
+			"IndividualTests": individualTests,
 		}
 		processedResults = append(processedResults, processedResult)
 
