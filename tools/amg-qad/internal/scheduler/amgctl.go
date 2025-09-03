@@ -26,6 +26,12 @@ type AmgctlUpgradeToLatestTest struct {
 	TempDir        string
 }
 
+// AmgctlSetupTest tests the host setup functionality of amgctl
+type AmgctlSetupTest struct {
+	Name    string
+	TempDir string
+}
+
 // NewAmgctlFetchLatestTest creates a new amgctl validation test
 func NewAmgctlFetchLatestTest(expectedVersion string) *AmgctlFetchLatestTest {
 	return &AmgctlFetchLatestTest{
@@ -43,6 +49,13 @@ func NewAmgctlUpgradeToLatestTest(currentVersion string) *AmgctlUpgradeToLatestT
 	}
 }
 
+// NewAmgctlSetupTest creates a new amgctl setup test
+func NewAmgctlSetupTest() *AmgctlSetupTest {
+	return &AmgctlSetupTest{
+		Name: "amgctl_setup_test",
+	}
+}
+
 // GetName returns the test name
 func (t *AmgctlFetchLatestTest) GetName() string {
 	return t.Name
@@ -50,6 +63,11 @@ func (t *AmgctlFetchLatestTest) GetName() string {
 
 // GetName returns the test name
 func (t *AmgctlUpgradeToLatestTest) GetName() string {
+	return t.Name
+}
+
+// GetName returns the test name
+func (t *AmgctlSetupTest) GetName() string {
 	return t.Name
 }
 
@@ -362,5 +380,145 @@ func (t *AmgctlUpgradeToLatestTest) runUpgradeCommand(binaryPath string, logs *s
 	}
 
 	logs.WriteString("⚠️  Upgrade command completed but success indicators not found\n")
+	return nil
+}
+
+// RunTest downloads amgctl and tests the host setup functionality
+func (t *AmgctlSetupTest) RunTest() (bool, time.Duration, string, error) {
+	start := time.Now()
+	var logs strings.Builder
+
+	logs.WriteString(fmt.Sprintf("Starting test: %s\n", t.Name))
+	logs.WriteString("Testing amgctl host clear and setup commands\n")
+
+	// Create temporary directory
+	tempDir, err := os.MkdirTemp("", "amg-qad-setup-test-")
+	if err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to create temp directory: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+	t.TempDir = tempDir
+	defer func() {
+		if cleanupErr := os.RemoveAll(tempDir); cleanupErr != nil {
+			logs.WriteString(fmt.Sprintf("WARNING: Failed to cleanup temp directory: %v\n", cleanupErr))
+		}
+	}()
+
+	logs.WriteString(fmt.Sprintf("Using temp directory: %s\n", tempDir))
+
+	// Download amgctl binary
+	binaryPath := filepath.Join(tempDir, "amgctl-linux-amd64")
+	if err := t.downloadAmgctl(binaryPath, &logs); err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to download amgctl: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	// Make binary executable
+	if err := os.Chmod(binaryPath, 0755); err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to make binary executable: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+	logs.WriteString("Made binary executable\n")
+
+	// Step 1: Run amgctl host clear
+	if err := t.runHostClearCommand(binaryPath, &logs); err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Host clear command failed: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	// Step 2: Run amgctl host setup
+	if err := t.runHostSetupCommand(binaryPath, &logs); err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Host setup command failed: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	duration := time.Since(start)
+	logs.WriteString("SUCCESS: Both host clear and setup commands completed successfully\n")
+	logs.WriteString(fmt.Sprintf("Test duration: %v\n", duration))
+
+	return true, duration, logs.String(), nil
+}
+
+// downloadAmgctl downloads the latest amgctl binary from GitHub
+func (t *AmgctlSetupTest) downloadAmgctl(filepath string, logs *strings.Builder) error {
+	// Direct URL to latest amgctl binary
+	binaryURL := "https://github.com/weka/amg-utils/releases/latest/download/amgctl-linux-amd64"
+
+	fmt.Fprintf(logs, "Downloading amgctl binary from: %s\n", binaryURL)
+
+	// Create HTTP client with timeout
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	// Download the binary directly
+	resp, err := client.Get(binaryURL)
+	if err != nil {
+		return fmt.Errorf("failed to download binary: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("binary download returned status: %s", resp.Status)
+	}
+
+	// Save binary to file
+	file, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("failed to create binary file: %w", err)
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to save binary: %w", err)
+	}
+
+	fmt.Fprintf(logs, "Binary downloaded to: %s\n", filepath)
+	return nil
+}
+
+// runHostClearCommand executes the amgctl host clear command
+func (t *AmgctlSetupTest) runHostClearCommand(binaryPath string, logs *strings.Builder) error {
+	logs.WriteString("Running amgctl host clear command...\n")
+
+	cmd := exec.Command(binaryPath, "host", "clear", "--yes")
+	cmd.Dir = t.TempDir
+
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+	fmt.Fprintf(logs, "Host clear command output:\n%s\n", outputStr)
+
+	if err != nil {
+		return fmt.Errorf("host clear command failed: %w", err)
+	}
+
+	logs.WriteString("✅ Host clear command completed successfully\n")
+	return nil
+}
+
+// runHostSetupCommand executes the amgctl host setup command
+func (t *AmgctlSetupTest) runHostSetupCommand(binaryPath string, logs *strings.Builder) error {
+	logs.WriteString("Running amgctl host setup command...\n")
+
+	cmd := exec.Command(binaryPath, "host", "setup")
+	cmd.Dir = t.TempDir
+
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+	fmt.Fprintf(logs, "Host setup command output:\n%s\n", outputStr)
+
+	if err != nil {
+		return fmt.Errorf("host setup command failed: %w", err)
+	}
+
+	logs.WriteString("✅ Host setup command completed successfully\n")
 	return nil
 }

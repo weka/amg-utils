@@ -19,7 +19,7 @@ type Scheduler struct {
 	isRunning   bool
 }
 
-// New creates a new scheduler with both test runners
+// New creates a new scheduler with all test runners
 func New(testTime string, store *storage.Storage, version string) *Scheduler {
 	return &Scheduler{
 		testTime: testTime,
@@ -27,6 +27,7 @@ func New(testTime string, store *storage.Storage, version string) *Scheduler {
 		testRunners: []TestRunner{
 			NewAmgctlFetchLatestTest(version),     // Real integration test
 			NewAmgctlUpgradeToLatestTest(version), // Upgrade functionality test
+			NewAmgctlSetupTest(),                  // Host setup functionality test
 		},
 		stopChan: make(chan bool),
 	}
@@ -153,6 +154,12 @@ func (s *Scheduler) executeTest() error {
 		}
 
 		log.Printf("Test %s completed: %s (duration: %v)", testName, status, duration)
+
+		// Print detailed logs to console if test failed
+		if !passed {
+			fmt.Printf("\n❌ FAILED TEST LOGS for %s:\n", testName)
+			fmt.Printf("---\n%s---\n\n", logs)
+		}
 
 		// Add to combined logs for summary
 		fmt.Fprintf(&combinedLogs, "=== %s ===\n%s\n\n", testName, logs)
