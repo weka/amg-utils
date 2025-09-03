@@ -91,53 +91,25 @@ func (t *AmgctlTest) RunTest() (bool, time.Duration, string, error) {
 
 // downloadAmgctl downloads the latest amgctl binary from GitHub
 func (t *AmgctlTest) downloadAmgctl(filepath string, logs *strings.Builder) error {
-	// GitHub releases API URL for latest release
-	releaseURL := "https://api.github.com/repos/weka/amg-utils/releases/latest"
+	// Direct URL to latest amgctl binary (much simpler!)
+	binaryURL := "https://github.com/weka/amg-utils/releases/latest/download/amgctl-linux-amd64"
 
-	fmt.Fprintf(logs, "Fetching latest release info from: %s\n", releaseURL)
+	fmt.Fprintf(logs, "Downloading amgctl binary from: %s\n", binaryURL)
 
 	// Create HTTP client with timeout
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	// Get latest release info
-	resp, err := client.Get(releaseURL)
+	// Download the binary directly
+	resp, err := client.Get(binaryURL)
 	if err != nil {
-		return fmt.Errorf("failed to fetch release info: %w", err)
+		return fmt.Errorf("failed to download binary: %w", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GitHub API returned status: %s", resp.Status)
-	}
-
-	// Parse JSON to find amgctl-linux-amd64 asset
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Simple JSON parsing to find the binary download URL
-	bodyStr := string(body)
-	binaryURL, found := t.extractBinaryURL(bodyStr, logs)
-	if !found {
-		return fmt.Errorf("amgctl-linux-amd64 binary not found in latest release")
-	}
-
-	fmt.Fprintf(logs, "Downloading binary from: %s\n", binaryURL)
-
-	// Download the binary
-	binResp, err := client.Get(binaryURL)
-	if err != nil {
-		return fmt.Errorf("failed to download binary: %w", err)
-	}
-	defer func() {
-		_ = binResp.Body.Close()
-	}()
-
-	if binResp.StatusCode != http.StatusOK {
-		return fmt.Errorf("binary download returned status: %s", binResp.Status)
+		return fmt.Errorf("binary download returned status: %s", resp.Status)
 	}
 
 	// Save binary to file
@@ -149,88 +121,13 @@ func (t *AmgctlTest) downloadAmgctl(filepath string, logs *strings.Builder) erro
 		_ = file.Close()
 	}()
 
-	_, err = io.Copy(file, binResp.Body)
+	_, err = io.Copy(file, resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to save binary: %w", err)
 	}
 
 	fmt.Fprintf(logs, "Binary downloaded to: %s\n", filepath)
 	return nil
-}
-
-// extractBinaryURL extracts the download URL for amgctl-linux-amd64 from GitHub API response
-func (t *AmgctlTest) extractBinaryURL(jsonBody string, logs *strings.Builder) (string, bool) {
-	// Simple JSON parsing - look for amgctl-linux-amd64 asset
-	// Look for all download URLs that contain amgctl-linux-amd64
-
-	// Split by lines and look for browser_download_url lines that contain our binary
-	lines := strings.Split(jsonBody, "\n")
-
-	for _, line := range lines {
-		// Look for browser_download_url lines
-		if strings.Contains(line, "browser_download_url") {
-			// Extract the URL
-			start := strings.Index(line, "https://")
-			if start == -1 {
-				continue
-			}
-			end := strings.LastIndex(line, `"`)
-			if end == -1 || end <= start {
-				continue
-			}
-
-			url := line[start:end]
-
-			// Check if this URL is for our binary
-			if strings.Contains(url, "amgctl-linux-amd64") {
-				fmt.Fprintf(logs, "Found binary URL: %s\n", url)
-				return url, true
-			}
-		}
-	}
-
-	// Also try a more direct approach - search for the binary name and then find the next URL
-	for i, line := range lines {
-		if strings.Contains(line, "amgctl-linux-amd64") {
-			// Look for browser_download_url in the next few lines
-			for j := i; j < len(lines) && j < i+10; j++ {
-				if strings.Contains(lines[j], "browser_download_url") {
-					start := strings.Index(lines[j], "https://")
-					if start == -1 {
-						continue
-					}
-					end := strings.LastIndex(lines[j], `"`)
-					if end == -1 || end <= start {
-						continue
-					}
-
-					url := lines[j][start:end]
-					fmt.Fprintf(logs, "Found binary URL (fallback method): %s\n", url)
-					return url, true
-				}
-			}
-		}
-	}
-
-	// Debug: log some info about what we found
-	assetCount := strings.Count(jsonBody, "browser_download_url")
-	fmt.Fprintf(logs, "DEBUG: Found %d total download URLs in release\n", assetCount)
-
-	// Log the first few URLs for debugging
-	urlCount := 0
-	for _, line := range lines {
-		if strings.Contains(line, "browser_download_url") && urlCount < 3 {
-			start := strings.Index(line, "https://")
-			end := strings.LastIndex(line, `"`)
-			if start != -1 && end > start {
-				url := line[start:end]
-				fmt.Fprintf(logs, "DEBUG: Available URL %d: %s\n", urlCount+1, url)
-				urlCount++
-			}
-		}
-	}
-
-	return "", false
 }
 
 // getVersion runs the binary and extracts its version
