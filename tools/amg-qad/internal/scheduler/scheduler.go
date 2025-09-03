@@ -28,6 +28,7 @@ func New(testTime string, store *storage.Storage, version string) *Scheduler {
 			NewAmgctlFetchLatestTest(version),     // Real integration test
 			NewAmgctlUpgradeToLatestTest(version), // Upgrade functionality test
 			NewAmgctlSetupTest(),                  // Host setup functionality test
+			NewPlaceholderDependentTest(),         // Placeholder test depending on setup test
 		},
 		stopChan: make(chan bool),
 	}
@@ -113,32 +114,46 @@ func (s *Scheduler) ExecuteTest() error {
 	return s.executeTest()
 }
 
-// executeTest runs all tests and stores the results
+// executeTest runs all tests using dependency engine and stores the results
 func (s *Scheduler) executeTest() error {
-	log.Printf("Executing %d scheduled tests...", len(s.testRunners))
+	log.Printf("Executing %d scheduled tests with dependency resolution...", len(s.testRunners))
 
 	overallStart := time.Now()
+
+	// Create dependency engine and execute tests
+	engine := NewTestDependencyEngine(s.testRunners)
+	results, err := engine.ExecuteTests()
+	if err != nil {
+		return fmt.Errorf("test execution failed: %w", err)
+	}
+
 	allPassed := true
 	var combinedLogs strings.Builder
 	var individualTests []storage.IndividualTest
 
-	for i, testRunner := range s.testRunners {
-		testName := testRunner.GetName()
+	// Process results
+	for i, result := range results {
+		testName := result.Name
 
-		log.Printf("Running test %d/%d: %s", i+1, len(s.testRunners), testName)
+		if result.Skipped {
+			log.Printf("Running test %d/%d: %s - SKIPPED (%s)", i+1, len(results), testName, result.Reason)
+		} else {
+			log.Printf("Running test %d/%d: %s", i+1, len(results), testName)
+		}
 
-		passed, duration, logs, err := testRunner.RunTest()
+		passed := result.Passed && !result.Skipped
+		logs := result.Logs
 
-		if err != nil {
+		if result.Error != nil && !result.Skipped {
 			passed = false
-			logs = fmt.Sprintf("Test execution error: %v\n%s", err, logs)
+			logs = fmt.Sprintf("Test execution error: %v\n%s", result.Error, logs)
 		}
 
 		// Create individual test record for embedding in test suite
 		individualTest := storage.IndividualTest{
 			Name:     testName,
 			Passed:   passed,
-			Duration: duration.String(),
+			Duration: result.Duration.String(),
 			Logs:     logs,
 		}
 		individualTests = append(individualTests, individualTest)
@@ -149,15 +164,21 @@ func (s *Scheduler) executeTest() error {
 		}
 
 		status := "PASSED"
-		if !passed {
+		if result.Skipped {
+			status = "SKIPPED"
+		} else if !passed {
 			status = "FAILED"
 		}
 
-		log.Printf("Test %s completed: %s (duration: %v)", testName, status, duration)
+		log.Printf("Test %s completed: %s (duration: %v)", testName, status, result.Duration)
 
-		// Print detailed logs to console if test failed
-		if !passed {
-			fmt.Printf("\n❌ FAILED TEST LOGS for %s:\n", testName)
+		// Print detailed logs to console if test failed or was skipped with important info
+		if !passed || result.Skipped {
+			statusEmoji := "❌"
+			if result.Skipped {
+				statusEmoji = "⏭️"
+			}
+			fmt.Printf("\n%s %s LOGS for %s:\n", statusEmoji, status, testName)
 			fmt.Printf("---\n%s---\n\n", logs)
 		}
 
@@ -172,8 +193,8 @@ func (s *Scheduler) executeTest() error {
 		Timestamp:  time.Now(),
 		Passed:     allPassed,
 		Duration:   overallDuration.String(),
-		Parameters: fmt.Sprintf("test_suite_%d_tests", len(s.testRunners)),
-		Logs:       fmt.Sprintf("Test Suite Summary:\n%d tests executed in %v\nOverall result: %t\n\n%s", len(s.testRunners), overallDuration, allPassed, combinedLogs.String()),
+		Parameters: fmt.Sprintf("test_suite_%d_tests", len(results)),
+		Logs:       fmt.Sprintf("Test Suite Summary:\n%d tests executed in %v\nOverall result: %t\n\n%s", len(results), overallDuration, allPassed, combinedLogs.String()),
 		Tests:      individualTests, // Embed individual test results
 	}
 
