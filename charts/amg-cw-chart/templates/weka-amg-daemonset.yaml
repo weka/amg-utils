@@ -2,9 +2,9 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: {{ include "amg-cw-chart.wekaamg.name" . }}
+  name: weka-amg
   labels:
-    {{- include "amg-cw-chart.wekaamg.labels" . | nindent 4 }}
+    app: weka-amg
   {{- with .Values.additionalAnnotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -12,11 +12,11 @@ metadata:
 spec:
   selector:
     matchLabels:
-      {{- include "amg-cw-chart.wekaamg.selectorLabels" . | nindent 6 }}
+      name: weka-amg
   template:
     metadata:
       labels:
-        {{- include "amg-cw-chart.wekaamg.selectorLabels" . | nindent 8 }}
+        name: weka-amg
       {{- with .Values.additionalAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
