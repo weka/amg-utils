@@ -1,8 +1,10 @@
 package scheduler
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -138,6 +140,13 @@ type AmgctlOnDiagnosticsTest struct {
 	TempDir      string
 }
 
+// AmgctlConfigCufileTest tests the cufile configuration functionality of amgctl
+type AmgctlConfigCufileTest struct {
+	Name         string
+	Dependencies []string
+	TempDir      string
+}
+
 // NewAmgctlFetchLatestTest creates a new amgctl validation test
 func NewAmgctlFetchLatestTest(expectedVersion string) *AmgctlFetchLatestTest {
 	return &AmgctlFetchLatestTest{
@@ -170,6 +179,14 @@ func NewAmgctlOnDiagnosticsTest() *AmgctlOnDiagnosticsTest {
 	}
 }
 
+// NewAmgctlConfigCufileTest creates a new cufile configuration test that depends on AmgctlSetupTest
+func NewAmgctlConfigCufileTest() *AmgctlConfigCufileTest {
+	return &AmgctlConfigCufileTest{
+		Name:         "amgctl_config_cufile_test",
+		Dependencies: []string{"amgctl_setup_test"},
+	}
+}
+
 // GetName returns the test name
 func (t *AmgctlFetchLatestTest) GetName() string {
 	return t.Name
@@ -192,6 +209,16 @@ func (t *AmgctlOnDiagnosticsTest) GetName() string {
 
 // GetDependencies returns the list of tests this test depends on
 func (t *AmgctlOnDiagnosticsTest) GetDependencies() []string {
+	return t.Dependencies
+}
+
+// GetName returns the test name
+func (t *AmgctlConfigCufileTest) GetName() string {
+	return t.Name
+}
+
+// GetDependencies returns the list of tests this test depends on
+func (t *AmgctlConfigCufileTest) GetDependencies() []string {
 	return t.Dependencies
 }
 
@@ -506,4 +533,223 @@ func (t *AmgctlOnDiagnosticsTest) RunTest() (bool, time.Duration, string, error)
 	logs.WriteString(fmt.Sprintf("Test duration: %v\n", duration))
 
 	return allPassed, duration, logs.String(), nil
+}
+
+// RunTest runs the cufile configuration test
+func (t *AmgctlConfigCufileTest) RunTest() (bool, time.Duration, string, error) {
+	start := time.Now()
+	var logs strings.Builder
+
+	logs.WriteString(fmt.Sprintf("Starting test: %s\n", t.Name))
+	logs.WriteString("Testing amgctl host config cufile command and validating cufile.json\n")
+	logs.WriteString("Dependencies: " + fmt.Sprintf("%v", t.Dependencies) + "\n")
+
+	// Create temporary directory
+	tempDir, err := os.MkdirTemp("", "amg-qad-cufile-test-")
+	if err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to create temp directory: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+	t.TempDir = tempDir
+	defer func() {
+		if cleanupErr := os.RemoveAll(tempDir); cleanupErr != nil {
+			logs.WriteString(fmt.Sprintf("WARNING: Failed to cleanup temp directory: %v\n", cleanupErr))
+		}
+	}()
+
+	logs.WriteString(fmt.Sprintf("Using temp directory: %s\n", tempDir))
+
+	// Setup amgctl binary
+	binaryPath, err := setupAmgctlBinary(tempDir, &logs)
+	if err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to setup amgctl: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	// Run host setup first (since we depend on AmgctlSetupTest)
+	if err := runAmgctlCommand(binaryPath, t.TempDir, []string{"host", "setup"}, &logs); err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Host setup command failed: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	// Run the cufile configuration command
+	if err := runAmgctlCommand(binaryPath, t.TempDir, []string{"host", "config", "cufile"}, &logs); err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Cufile config command failed: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	// Check that the cufile.json was created
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to get home directory: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	cufilePath := filepath.Join(homeDir, "amg_stable", "cufile.json")
+	logs.WriteString(fmt.Sprintf("Checking for cufile.json at: %s\n", cufilePath))
+
+	if _, err := os.Stat(cufilePath); os.IsNotExist(err) {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: cufile.json not found at expected path: %s\n", cufilePath))
+		return false, duration, logs.String(), fmt.Errorf("cufile.json not created")
+	}
+	logs.WriteString("✅ cufile.json exists\n")
+
+	// Read and parse the JSON file
+	cufileData, err := os.ReadFile(cufilePath)
+	if err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to read cufile.json: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	// Parse JSON
+	var cufile map[string]interface{}
+	if err := json.Unmarshal(cufileData, &cufile); err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to parse cufile.json: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+	logs.WriteString("✅ cufile.json is valid JSON\n")
+
+	// Validate the required configuration
+	passed := t.validateCufileConfig(cufile, &logs)
+
+	duration := time.Since(start)
+	if passed {
+		logs.WriteString("SUCCESS: All cufile configuration validation passed\n")
+	} else {
+		logs.WriteString("FAILED: Cufile configuration validation failed\n")
+	}
+	logs.WriteString(fmt.Sprintf("Test duration: %v\n", duration))
+
+	return passed, duration, logs.String(), nil
+}
+
+// validateCufileConfig validates the cufile JSON configuration against requirements
+func (t *AmgctlConfigCufileTest) validateCufileConfig(cufile map[string]interface{}, logs *strings.Builder) bool {
+	allPassed := true
+
+	logs.WriteString("Validating cufile configuration...\n")
+
+	// Check execution section
+	if execution, ok := cufile["execution"].(map[string]interface{}); ok {
+		// Check max_io_threads
+		if maxThreads, ok := execution["max_io_threads"].(float64); ok {
+			if maxThreads == 0 {
+				logs.WriteString("✅ execution.max_io_threads = 0 (correct)\n")
+			} else {
+				fmt.Fprintf(logs, "❌ execution.max_io_threads = %.0f (expected 0)\n", maxThreads)
+				allPassed = false
+			}
+		} else {
+			logs.WriteString("❌ execution.max_io_threads not found or wrong type\n")
+			allPassed = false
+		}
+
+		// Check parallel_io
+		if parallelIO, ok := execution["parallel_io"].(bool); ok {
+			if parallelIO {
+				logs.WriteString("✅ execution.parallel_io = true (correct)\n")
+			} else {
+				logs.WriteString("❌ execution.parallel_io = false (expected true)\n")
+				allPassed = false
+			}
+		} else {
+			logs.WriteString("❌ execution.parallel_io not found or wrong type\n")
+			allPassed = false
+		}
+	} else {
+		logs.WriteString("❌ execution section not found\n")
+		allPassed = false
+	}
+
+	// Check properties section
+	if properties, ok := cufile["properties"].(map[string]interface{}); ok {
+		// Check rdma_dev_addr_list
+		if rdmaList, ok := properties["rdma_dev_addr_list"].([]interface{}); ok {
+			if len(rdmaList) > 0 {
+				hasValidIP := false
+				for _, addr := range rdmaList {
+					if addrStr, ok := addr.(string); ok {
+						if net.ParseIP(addrStr) != nil {
+							hasValidIP = true
+							fmt.Fprintf(logs, "✅ properties.rdma_dev_addr_list contains valid IP: %s\n", addrStr)
+							break
+						}
+					}
+				}
+				if !hasValidIP {
+					logs.WriteString("❌ properties.rdma_dev_addr_list has no valid IP addresses\n")
+					allPassed = false
+				}
+			} else {
+				logs.WriteString("❌ properties.rdma_dev_addr_list is empty\n")
+				allPassed = false
+			}
+		} else {
+			logs.WriteString("❌ properties.rdma_dev_addr_list not found or wrong type\n")
+			allPassed = false
+		}
+
+		// Check allow_compat_mode
+		if compatMode, ok := properties["allow_compat_mode"].(bool); ok {
+			if compatMode {
+				logs.WriteString("✅ properties.allow_compat_mode = true (correct)\n")
+			} else {
+				logs.WriteString("❌ properties.allow_compat_mode = false (expected true)\n")
+				allPassed = false
+			}
+		} else {
+			logs.WriteString("❌ properties.allow_compat_mode not found or wrong type\n")
+			allPassed = false
+		}
+
+		// Check gds_rdma_write_support
+		if gdsRdmaWrite, ok := properties["gds_rdma_write_support"].(bool); ok {
+			if gdsRdmaWrite {
+				logs.WriteString("✅ properties.gds_rdma_write_support = true (correct)\n")
+			} else {
+				logs.WriteString("❌ properties.gds_rdma_write_support = false (expected true)\n")
+				allPassed = false
+			}
+		} else {
+			logs.WriteString("❌ properties.gds_rdma_write_support not found or wrong type\n")
+			allPassed = false
+		}
+	} else {
+		logs.WriteString("❌ properties section not found\n")
+		allPassed = false
+	}
+
+	// Check fs.weka section
+	if fs, ok := cufile["fs"].(map[string]interface{}); ok {
+		if weka, ok := fs["weka"].(map[string]interface{}); ok {
+			// Check rdma_write_support
+			if rdmaWriteSupport, ok := weka["rdma_write_support"].(bool); ok {
+				if rdmaWriteSupport {
+					logs.WriteString("✅ fs.weka.rdma_write_support = true (correct)\n")
+				} else {
+					logs.WriteString("❌ fs.weka.rdma_write_support = false (expected true)\n")
+					allPassed = false
+				}
+			} else {
+				logs.WriteString("❌ fs.weka.rdma_write_support not found or wrong type\n")
+				allPassed = false
+			}
+		} else {
+			logs.WriteString("❌ fs.weka section not found\n")
+			allPassed = false
+		}
+	} else {
+		logs.WriteString("❌ fs section not found\n")
+		allPassed = false
+	}
+
+	return allPassed
 }
