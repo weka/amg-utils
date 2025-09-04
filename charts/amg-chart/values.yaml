@@ -2,6 +2,11 @@ image:
   repository: sdimitro509/amg
   tag: "latest"
   pullPolicy: IfNotPresent
+
+# Environment variables configuration
+env:
+  hfToken: ""
+  hfPath: "/mnt/weka/hf_cache"
 resources:
   # We default to 8 assuming DGX. Configure accordingly.
   gpu: 8

@@ -27,6 +27,11 @@ spec:
           {{.Values.resources.rdma.name }}: {{.Values.resources.rdma.count | quote }}
       command: ["/bin/bash", "-c", "--"]
       args: ["while true; do sleep 60; done;"]
+      env:
+        - name: HF_TOKEN
+          value: {{ .Values.env.hfToken | quote }}
+        - name: HF_PATH
+          value: {{ .Values.env.hfPath | quote }}
       volumeMounts:
         - name: weka-storage
           mountPath: /mnt/weka

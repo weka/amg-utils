@@ -56,6 +56,10 @@ spec:
               value: {{ .Values.wekaAmg.env.ncclDebug | quote }}
             - name: NVIDIA_GDRCOPY
               value: {{ .Values.wekaAmg.env.nvidiaGdrcopy | quote }}
+            - name: HF_TOKEN
+              value: {{ .Values.wekaAmg.env.hfToken | quote }}
+            - name: HF_PATH
+              value: {{ .Values.wekaAmg.env.hfPath | quote }}
             {{- with .Values.wekaAmg.additionalEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
