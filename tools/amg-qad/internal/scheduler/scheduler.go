@@ -28,7 +28,7 @@ func New(testTime string, store *storage.Storage, version string) *Scheduler {
 			NewAmgctlFetchLatestTest(version),     // Real integration test
 			NewAmgctlUpgradeToLatestTest(version), // Upgrade functionality test
 			NewAmgctlSetupTest(),                  // Host setup functionality test
-			NewPlaceholderDependentTest(),         // Placeholder test depending on setup test
+			NewAmgctlOnDiagnosticsTest(),          // Diagnostic test depending on setup test
 		},
 		stopChan: make(chan bool),
 	}
