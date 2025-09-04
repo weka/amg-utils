@@ -147,6 +147,13 @@ type AmgctlConfigCufileTest struct {
 	TempDir      string
 }
 
+// LMCacheMicroBenchmarkTest tests LM cache performance using benchmark script
+type LMCacheMicroBenchmarkTest struct {
+	Name         string
+	Dependencies []string
+	TempDir      string
+}
+
 // NewAmgctlFetchLatestTest creates a new amgctl validation test
 func NewAmgctlFetchLatestTest(expectedVersion string) *AmgctlFetchLatestTest {
 	return &AmgctlFetchLatestTest{
@@ -187,6 +194,14 @@ func NewAmgctlConfigCufileTest() *AmgctlConfigCufileTest {
 	}
 }
 
+// NewLMCacheMicroBenchmarkTest creates a new LM cache benchmark test that depends on AmgctlSetupTest
+func NewLMCacheMicroBenchmarkTest() *LMCacheMicroBenchmarkTest {
+	return &LMCacheMicroBenchmarkTest{
+		Name:         "lmcache_microbenchmark_test",
+		Dependencies: []string{"amgctl_setup_test"},
+	}
+}
+
 // GetName returns the test name
 func (t *AmgctlFetchLatestTest) GetName() string {
 	return t.Name
@@ -219,6 +234,16 @@ func (t *AmgctlConfigCufileTest) GetName() string {
 
 // GetDependencies returns the list of tests this test depends on
 func (t *AmgctlConfigCufileTest) GetDependencies() []string {
+	return t.Dependencies
+}
+
+// GetName returns the test name
+func (t *LMCacheMicroBenchmarkTest) GetName() string {
+	return t.Name
+}
+
+// GetDependencies returns the list of tests this test depends on
+func (t *LMCacheMicroBenchmarkTest) GetDependencies() []string {
 	return t.Dependencies
 }
 
@@ -749,6 +774,207 @@ func (t *AmgctlConfigCufileTest) validateCufileConfig(cufile map[string]interfac
 	} else {
 		logs.WriteString("❌ fs section not found\n")
 		allPassed = false
+	}
+
+	return allPassed
+}
+
+// RunTest runs the LM cache microbenchmark test
+func (t *LMCacheMicroBenchmarkTest) RunTest() (bool, time.Duration, string, error) {
+	start := time.Now()
+	var logs strings.Builder
+
+	logs.WriteString(fmt.Sprintf("Starting test: %s\n", t.Name))
+	logs.WriteString("Testing LM cache performance with benchmark script\n")
+	logs.WriteString("Dependencies: " + fmt.Sprintf("%v", t.Dependencies) + "\n")
+
+	// Create temporary directory
+	tempDir, err := os.MkdirTemp("", "amg-qad-lmcache-test-")
+	if err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to create temp directory: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+	t.TempDir = tempDir
+	defer func() {
+		if cleanupErr := os.RemoveAll(tempDir); cleanupErr != nil {
+			logs.WriteString(fmt.Sprintf("WARNING: Failed to cleanup temp directory: %v\n", cleanupErr))
+		}
+	}()
+
+	logs.WriteString(fmt.Sprintf("Using temp directory: %s\n", tempDir))
+
+	// Setup amgctl binary
+	binaryPath, err := setupAmgctlBinary(tempDir, &logs)
+	if err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to setup amgctl: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	// Run host setup first (since we depend on AmgctlSetupTest)
+	if err := runAmgctlCommand(binaryPath, t.TempDir, []string{"host", "setup"}, &logs); err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Host setup command failed: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	// Get home directory for subsequent operations
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to get home directory: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	// Download the benchmark script
+	scriptPath := filepath.Join(homeDir, "benchmark_lmcache_chunk_profiling.py")
+	if err := t.downloadBenchmarkScript(scriptPath, &logs); err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to download benchmark script: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	// Run the benchmark in the virtual environment
+	venvPath := filepath.Join(homeDir, "amg_stable", ".venv", "bin", "activate")
+	if err := t.runBenchmarkInVenv(venvPath, scriptPath, homeDir, &logs); err != nil {
+		duration := time.Since(start)
+		logs.WriteString(fmt.Sprintf("ERROR: Failed to run benchmark: %v\n", err))
+		return false, duration, logs.String(), err
+	}
+
+	// Validate output files
+	passed := t.validateBenchmarkOutputs(homeDir, &logs)
+
+	duration := time.Since(start)
+	if passed {
+		logs.WriteString("SUCCESS: LM cache microbenchmark completed successfully\n")
+	} else {
+		logs.WriteString("FAILED: LM cache microbenchmark validation failed\n")
+	}
+	logs.WriteString(fmt.Sprintf("Test duration: %v\n", duration))
+
+	return passed, duration, logs.String(), nil
+}
+
+// downloadBenchmarkScript downloads the benchmark script from GitHub
+func (t *LMCacheMicroBenchmarkTest) downloadBenchmarkScript(filepath string, logs *strings.Builder) error {
+	scriptURL := "https://raw.githubusercontent.com/weka/amg-utils/refs/heads/main/benchmarks/benchmark_lmcache_chunk_profiling.py"
+	fmt.Fprintf(logs, "Downloading benchmark script from: %s\n", scriptURL)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(scriptURL)
+	if err != nil {
+		return fmt.Errorf("failed to download script: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("script download returned status: %s", resp.Status)
+	}
+
+	file, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("failed to create script file: %w", err)
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to save script: %w", err)
+	}
+
+	fmt.Fprintf(logs, "✅ Benchmark script downloaded to: %s\n", filepath)
+	return nil
+}
+
+// runBenchmarkInVenv runs the benchmark script inside the virtual environment
+func (t *LMCacheMicroBenchmarkTest) runBenchmarkInVenv(venvPath, scriptPath, homeDir string, logs *strings.Builder) error {
+	logs.WriteString("Running LM cache benchmark in virtual environment...\n")
+	fmt.Fprintf(logs, "Using venv: %s\n", venvPath)
+
+	// Check if venv exists
+	if _, err := os.Stat(venvPath); os.IsNotExist(err) {
+		return fmt.Errorf("virtual environment not found at %s", venvPath)
+	}
+
+	// Create the bash command that sources the venv and runs the benchmark
+	// We need to run this as a single bash command to maintain the venv activation
+	bashScript := fmt.Sprintf(`
+cd %s
+source %s
+python3 %s --chunk-sizes 256 --token-count 131072 --use-weka --gds-io-threads 32 --gpu-device 7 --iterations 200 --enable-profiling
+deactivate
+`, homeDir, venvPath, scriptPath)
+
+	logs.WriteString("Executing benchmark with parameters: --chunk-sizes 256 --token-count 131072 --use-weka --gds-io-threads 32 --gpu-device 7 --iterations 200 --enable-profiling\n")
+
+	cmd := exec.Command("bash", "-c", bashScript)
+	cmd.Dir = homeDir
+
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+	fmt.Fprintf(logs, "Benchmark execution output:\n%s\n", outputStr)
+
+	if err != nil {
+		return fmt.Errorf("benchmark execution failed: %w", err)
+	}
+
+	logs.WriteString("✅ Benchmark execution completed successfully\n")
+	return nil
+}
+
+// validateBenchmarkOutputs checks for the expected output files and logs their contents
+func (t *LMCacheMicroBenchmarkTest) validateBenchmarkOutputs(homeDir string, logs *strings.Builder) bool {
+	allPassed := true
+
+	logs.WriteString("Validating benchmark output files...\n")
+
+	// Check for profile text file
+	profileFile := filepath.Join(homeDir, "profile_retrieve_chunk_256_tokens_131072_layers_2.txt")
+	if _, err := os.Stat(profileFile); os.IsNotExist(err) {
+		fmt.Fprintf(logs, "❌ Profile text file not found: %s\n", profileFile)
+		allPassed = false
+	} else {
+		fmt.Fprintf(logs, "✅ Profile text file exists: %s\n", profileFile)
+
+		// Read and log the profile file contents
+		if profileData, err := os.ReadFile(profileFile); err != nil {
+			fmt.Fprintf(logs, "⚠️  Could not read profile file: %v\n", err)
+		} else {
+			logs.WriteString("📄 Profile file contents:\n")
+			fmt.Fprintf(logs, "--- BEGIN profile_retrieve_chunk_256_tokens_131072_layers_2.txt ---\n%s--- END profile_retrieve_chunk_256_tokens_131072_layers_2.txt ---\n\n", string(profileData))
+		}
+	}
+
+	// Check for JSON results file
+	jsonFile := filepath.Join(homeDir, "lmcache_advanced_profiling_results.json")
+	if _, err := os.Stat(jsonFile); os.IsNotExist(err) {
+		fmt.Fprintf(logs, "❌ JSON results file not found: %s\n", jsonFile)
+		allPassed = false
+	} else {
+		fmt.Fprintf(logs, "✅ JSON results file exists: %s\n", jsonFile)
+
+		// Read and log the JSON file contents
+		if jsonData, err := os.ReadFile(jsonFile); err != nil {
+			fmt.Fprintf(logs, "⚠️  Could not read JSON file: %v\n", err)
+		} else {
+			// Validate it's proper JSON
+			var results interface{}
+			if err := json.Unmarshal(jsonData, &results); err != nil {
+				fmt.Fprintf(logs, "❌ JSON file is invalid: %v\n", err)
+				allPassed = false
+			} else {
+				logs.WriteString("✅ JSON file is valid JSON\n")
+			}
+
+			logs.WriteString("📄 JSON results file contents:\n")
+			fmt.Fprintf(logs, "--- BEGIN lmcache_advanced_profiling_results.json ---\n%s--- END lmcache_advanced_profiling_results.json ---\n\n", string(jsonData))
+		}
 	}
 
 	return allPassed

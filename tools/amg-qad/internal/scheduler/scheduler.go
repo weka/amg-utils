@@ -30,6 +30,7 @@ func New(testTime string, store *storage.Storage, version string) *Scheduler {
 			NewAmgctlSetupTest(),                  // Host setup functionality test
 			NewAmgctlOnDiagnosticsTest(),          // Diagnostic test depending on setup test
 			NewAmgctlConfigCufileTest(),           // Cufile configuration test depending on setup test
+			NewLMCacheMicroBenchmarkTest(),        // LM cache performance benchmark depending on setup test
 		},
 		stopChan: make(chan bool),
 	}
