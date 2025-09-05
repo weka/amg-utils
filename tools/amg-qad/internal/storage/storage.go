@@ -85,6 +85,11 @@ func (s *Storage) GetLastResults(limit int) ([]TestResult, error) {
 	var results []TestResult
 	scanner := bufio.NewScanner(file)
 
+	// Increase buffer size to handle large log entries (e.g., benchmark results with full file contents)
+	// Default is 64KB, increase to 10MB to handle large test logs
+	const maxBufferSize = 10 * 1024 * 1024 // 10MB
+	scanner.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), maxBufferSize)
+
 	for scanner.Scan() {
 		var result TestResult
 		if err := json.Unmarshal(scanner.Bytes(), &result); err != nil {
