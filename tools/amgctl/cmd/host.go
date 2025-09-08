@@ -1947,16 +1947,25 @@ func performHostPreflightChecks(dryRun bool) error {
 	}
 	fmt.Println("✅ Weka mount path accessible")
 
-	// Check if hf-home directory exists
+	// Check if hf-home directory exists and create it if needed
 	hfHome := viper.GetString("hf-home")
 	if hfHome != "" {
 		if _, err := os.Stat(hfHome); os.IsNotExist(err) {
-			return fmt.Errorf("hugging Face cache directory '%s' does not exist. Please create the directory or specify a different --hf-home", hfHome)
+			// Directory doesn't exist - create it if we're not in dry-run mode
+			if !dryRun {
+				if err := os.MkdirAll(hfHome, 0755); err != nil {
+					return fmt.Errorf("failed to create Hugging Face cache directory '%s': %v", hfHome, err)
+				}
+				fmt.Printf("✅ Created Hugging Face cache directory: %s\n", hfHome)
+			} else {
+				fmt.Printf("✅ Would create Hugging Face cache directory: %s (dry-run mode)\n", hfHome)
+			}
 		} else if err != nil {
 			return fmt.Errorf("failed to access Hugging Face cache directory '%s': %v", hfHome, err)
+		} else {
+			fmt.Println("✅ Hugging Face cache directory accessible")
 		}
 	}
-	fmt.Println("✅ Hugging Face cache directory accessible")
 
 	// Check if prometheus-multiproc-dir directory exists and create it if needed (skip if prometheus disabled)
 	if !viper.GetBool("no-prometheus") {
