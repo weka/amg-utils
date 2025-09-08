@@ -31,19 +31,44 @@ spec:
           args:
             - |
               bash <<EOF
+              set -e  # Exit on any command failure
+              
+              echo "Starting nvidia_fs installation process..."
+              
               chroot /host
               export KERNEL_VERSION={{ .Values.nvidiaFs.kernelVersion }}
               export DEBIAN_FRONTEND=noninteractive
+              
+              echo "Updating package lists..."
               apt-get update
+              
+              echo "Installing required packages..."
               apt-get install -y curl wget iputils-ping net-tools dnsutils tcpdump nmap netcat procps lsof vim htop nvme-cli iproute2 kmod hwloc less
+              
+              echo "Setting up CUDA repository..."
               cd /opt/k8s-weka
               wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
               dpkg -i --force-confnew cuda-keyring_1.1-1_all.deb
               apt-get update
+              
+              echo "Installing nvidia-gds..."
               apt install -y nvidia-gds={{ .Values.nvidiaFs.nvidiaGdsVersion }}
+              
+              echo "Loading nvidia_fs module..."
               modprobe nvidia_fs
-              lsmod | grep nvidia_fs
-              sleep infinity
+              
+              echo "Verifying nvidia_fs module is loaded..."
+              if lsmod | grep -q nvidia_fs; then
+                echo "SUCCESS: nvidia_fs module is loaded successfully"
+                lsmod | grep nvidia_fs
+                echo "nvidia_fs installation completed successfully. Exiting."
+                exit 0
+              else
+                echo "ERROR: nvidia_fs module failed to load properly"
+                echo "Available modules:"
+                lsmod | head -10
+                exit 1
+              fi
               EOF
           resources:
             {{- toYaml .Values.nvidiaFs.resources | nindent 12 }}
