@@ -75,6 +75,10 @@ wekaAmg:
     hfToken: ""
     hfPath: "/mnt/weka/hf_cache"
   
+  # Container command and arguments
+  command: ["/bin/bash", "-c", "--"]
+  args: ["while true; do sleep 60; done;"]
+  
   # Additional environment variables
   additionalEnv: []
   

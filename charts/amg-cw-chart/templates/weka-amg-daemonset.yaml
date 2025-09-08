@@ -43,8 +43,8 @@ spec:
               nvidia.com/gpu: {{ .Values.wekaAmg.resources.limits.nvidiaGpu }}
               cpu: {{ .Values.wekaAmg.resources.limits.cpu | quote }}
               memory: {{ .Values.wekaAmg.resources.limits.memory | quote }}
-          command: ["/bin/bash", "-c", "--"]
-          args: ["while true; do sleep 60; done;"]
+          command: {{ .Values.wekaAmg.command | toJson }}
+          args: {{ .Values.wekaAmg.args | toJson }}
           env:
             - name: NCCL_SOCKET_IFNAME
               value: {{ .Values.wekaAmg.env.ncclSocketIfname | quote }}
