@@ -36,6 +36,13 @@ spec:
         - name: weka-storage
           mountPath: /mnt/weka
   volumes:
-    - name: weka-storage # TODO: Change to PVC
+    - name: weka-storage
+      {{- if eq .Values.volume.type "pvc" }}
+      persistentVolumeClaim:
+        claimName: {{ .Values.volume.pvc.name }}
+      {{- else if eq .Values.volume.type "hostPath" }}
       hostPath:
-        path: {{ .Values.volume.hostPath | quote }}
+        path: {{ .Values.volume.hostPath.path | quote }}
+      {{- else }}
+      {{- fail "volume.type must be either 'pvc' or 'hostPath'" }}
+      {{- end }}

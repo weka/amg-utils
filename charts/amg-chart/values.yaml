@@ -10,9 +10,19 @@ env:
 
 # Volume configuration
 volume:
-  # Configure the hostPath for weka-storage volume
-  # This can be overridden during installation via --set volume.hostPath=/your/custom/path
-  hostPath: "/mnt/weka"
+  # Volume type: "pvc" or "hostPath"
+  # Default is "pvc" - users can override to "hostPath" if needed
+  type: "pvc"
+  
+  # PVC configuration (used when type: "pvc")
+  pvc:
+    # Name of the PVC to use
+    name: "wekafs-amg"
+  
+  # HostPath configuration (used when type: "hostPath")
+  hostPath:
+    # Path on the host to mount
+    path: "/mnt/weka"
 resources:
   # We default to 8 assuming DGX. Configure accordingly.
   gpu: 8
