@@ -7,6 +7,12 @@ image:
 env:
   hfToken: ""
   hfPath: "/mnt/weka/hf_cache"
+
+# Volume configuration
+volume:
+  # Configure the hostPath for weka-storage volume
+  # This can be overridden during installation via --set volume.hostPath=/your/custom/path
+  hostPath: "/mnt/weka"
 resources:
   # We default to 8 assuming DGX. Configure accordingly.
   gpu: 8

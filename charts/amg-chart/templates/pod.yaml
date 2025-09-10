@@ -38,4 +38,4 @@ spec:
   volumes:
     - name: weka-storage # TODO: Change to PVC
       hostPath:
-        path: /mnt/weka
+        path: {{ .Values.volume.hostPath | quote }}
