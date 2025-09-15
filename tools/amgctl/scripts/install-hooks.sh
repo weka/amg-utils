@@ -5,9 +5,9 @@ set -e
 # Get the repository root
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 HOOKS_DIR="$REPO_ROOT/.git/hooks"
-TOOL_DIR="$REPO_ROOT/tools/amg-qad"
+TOOL_DIR="$REPO_ROOT/tools/amgctl"
 
-# Check if we're in the amg-qad directory or repository root
+# Check if we're in the amgctl directory or repository root
 if [[ "$(pwd)" != "$TOOL_DIR" ]] && [[ "$(pwd)" != "$REPO_ROOT" ]]; then
     echo "Error: This script should be run from either:"
     echo "  - Repository root: $REPO_ROOT"
