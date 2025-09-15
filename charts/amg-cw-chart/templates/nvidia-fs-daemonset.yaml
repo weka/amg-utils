@@ -82,6 +82,7 @@ spec:
                 lsmod | head -10
                 exit 1
               fi
+              sleep infinity
               EOF
           resources:
             {{- toYaml .Values.nvidiaFs.resources | nindent 12 }}
