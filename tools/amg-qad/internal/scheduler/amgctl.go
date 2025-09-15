@@ -65,7 +65,7 @@ func getAmgctlVersion(binaryPath, workingDir string, logs *strings.Builder) (str
 	versionOutput := strings.TrimSpace(string(output))
 	fmt.Fprintf(logs, "Version command output: %s\n", versionOutput)
 
-	// Extract version from output like "amgctl version 0.1.16"
+	// Extract version from output like "amgctl version 0.1.17"
 	parts := strings.Fields(versionOutput)
 	if len(parts) < 3 {
 		return "", fmt.Errorf("unexpected version output format: %s", versionOutput)
