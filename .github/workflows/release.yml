@@ -76,18 +76,29 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: ./binaries
+          path: ./artifacts
           merge-multiple: true
 
+      - name: Prepare release assets
+        run: |
+          mkdir -p ./binaries
+          echo "Downloaded artifacts structure:"
+          find ./artifacts -type f | sort
+          
+          # Copy all binary files to a flat structure
+          find ./artifacts -type f -name "*amg*" -exec cp {} ./binaries/ \;
+          
+          echo "Prepared binaries for release:"
+          ls -la ./binaries/
+          
       - name: Generate checksums
         run: |
           cd binaries
-          # List what we have for debugging
-          echo "Contents of binaries directory:"
-          find . -type f -name "*" | sort
+          echo "Generating checksums for:"
+          ls -la
           
-          # Generate checksums only for files, not directories
-          find . -type f -name "*amg*" -exec sha256sum {} \; | sed 's|./||' > checksums.txt
+          # Generate checksums for all files
+          sha256sum * > checksums.txt
           
           echo "Generated checksums:"
           cat checksums.txt
@@ -185,6 +196,8 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           body: ${{ steps.release_notes.outputs.notes }}
           files: |
-            binaries/*
+            binaries/amgctl-linux-amd64
+            binaries/amg-qad-linux-amd64
+            binaries/checksums.txt
           draft: false
           prerelease: false
