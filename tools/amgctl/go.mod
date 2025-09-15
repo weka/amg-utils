@@ -2,6 +2,8 @@ module github.com/weka/amg-utils/tools/amgctl
 
 go 1.23.0
 
+toolchain go1.23.1
+
 require (
 	github.com/NVIDIA/go-nvml v0.12.9-0
 	github.com/prometheus/procfs v0.17.0
