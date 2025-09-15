@@ -60,8 +60,8 @@ jobs:
         with:
           name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            tools/amgctl/amgctl-*
-            tools/amg-qad/amg-qad-*
+            tools/amgctl/amgctl-${{ matrix.goos }}-${{ matrix.goarch }}
+            tools/amg-qad/amg-qad-${{ matrix.goos }}-${{ matrix.goarch }}
 
   release:
     name: Create release
@@ -82,7 +82,15 @@ jobs:
       - name: Generate checksums
         run: |
           cd binaries
-          sha256sum * > checksums.txt
+          # List what we have for debugging
+          echo "Contents of binaries directory:"
+          find . -type f -name "*" | sort
+          
+          # Generate checksums only for files, not directories
+          find . -type f -name "*amg*" -exec sha256sum {} \; | sed 's|./||' > checksums.txt
+          
+          echo "Generated checksums:"
+          cat checksums.txt
           
       - name: Get tag name
         id: tag
