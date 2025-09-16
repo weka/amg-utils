@@ -1042,11 +1042,6 @@ func runHostPreFlight(full bool) error {
 
 	fmt.Println()
 	fmt.Println("🎉 Pre-flight checks completed successfully!")
-	fmt.Println()
-	fmt.Println("📋 Next Steps:")
-	fmt.Println("  • Your system is ready for AMG setup")
-	fmt.Println("  • Run 'amgctl host setup' to install and configure AMG")
-	fmt.Println("  • Run 'amgctl host status' to check environment status")
 
 	return nil
 }
