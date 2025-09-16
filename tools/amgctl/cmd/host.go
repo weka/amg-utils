@@ -200,7 +200,7 @@ func init() {
 
 	// Add vLLM configuration flags
 	hostLaunchCmd.PersistentFlags().Bool("no-enable-prefix-caching", false, "Disable vLLM prefix caching")
-	hostLaunchCmd.PersistentFlags().Bool("enable-safefasttensors", true, "Enable USE_FASTSAFETENSOR=true env var and --load-format fastsafetensors argument")
+	hostLaunchCmd.PersistentFlags().Bool("enable-safefasttensors", false, "Enable USE_FASTSAFETENSOR=true env var and --load-format fastsafetensors argument")
 	hostLaunchCmd.PersistentFlags().Bool("allow-random-python-seed", false, "Allow random Python hash seed (by default PYTHONHASHSEED=0 is set for reproducibility)")
 
 	// Add flag to skip default cufile configuration
