@@ -5,7 +5,7 @@
 - Install the AMG Helm Chart v0.1.0 with your `HF_TOKEN` - accepting all the defaults this should look something like this:
     
     ```
-    $ helm install amg-cw oci://ghcr.io/sdimitro/amg-cw-chart --version 0.1.0 \
+    $ helm install amg-cw oci://ghcr.io/sdimitro/amg-cw-chart --version 0.1.1 \
       --set wekaAmg.env.hfToken="<HF_TOKEN here - e.g. hf_1234567890abcdef>"
     ```
     
