@@ -1104,7 +1104,6 @@ func validateGDSOutput(output string) error {
 
 	// Track requirements
 	requirements := map[string]bool{
-		"nvme_supported":              false,
 		"wekafs_supported":            false,
 		"userspace_rdma_supported":    false,
 		"mellanox_peerdirect_enabled": false,
@@ -1116,11 +1115,6 @@ func validateGDSOutput(output string) error {
 	// Parse the output line by line
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-
-		// Check NVMe support
-		if strings.Contains(line, "NVMe") && strings.Contains(line, ": Supported") {
-			requirements["nvme_supported"] = true
-		}
 
 		// Check WekaFS support
 		if strings.Contains(line, "WekaFS") && strings.Contains(line, ": Supported") {
@@ -1155,13 +1149,6 @@ func validateGDSOutput(output string) error {
 
 	// Validate all requirements
 	var errors []string
-
-	// NVMe check - warn if not supported but don't fail
-	if !requirements["nvme_supported"] {
-		fmt.Println("⚠️  NVMe: Not supported - performance may not be optimal")
-	} else {
-		fmt.Println("✅ NVMe: Supported")
-	}
 
 	if !requirements["wekafs_supported"] {
 		errors = append(errors, "WekaFS is not supported")
