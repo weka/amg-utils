@@ -3,7 +3,7 @@ name: amg-chart
 description: A Helm chart for deploying AMG workloads on Kubernetes with GPU and RDMA support
 type: application
 version: 0.1.1
-appVersion: "0.1.17" # amg-utils version
+appVersion: "0.1.18" # amg-utils version
 
 # Chart metadata
 home: https://github.com/weka/amg-utils
