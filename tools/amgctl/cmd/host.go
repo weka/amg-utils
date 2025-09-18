@@ -243,7 +243,7 @@ const (
 	uvEnvName   = "amg_stable"
 	repoURL     = "https://github.com/sdimitro/LMCache.git"
 	repoName    = "LMCache"
-	defaultRef  = "upstream_various" // Can be a tag, branch, or commit hash
+	defaultRef  = "amg-0.0.1" // Can be a tag, branch, or commit hash
 	vllmVersion = "0.10.0"
 	stateFile   = ".amg_setup_state.json"
 )
