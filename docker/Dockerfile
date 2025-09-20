@@ -33,6 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     libffi-dev \
     python3-dev \
+    python3-venv \
     gds-tools-12-9 \
     libcufile-12-9 \
     librdmacm1 \
@@ -66,15 +67,16 @@ ENV PATH="/root/.local/bin:${PATH}"
 RUN wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION}/amgctl-linux-amd64 -O /usr/local/bin/amgctl && \
     chmod +x /usr/local/bin/amgctl
 
-# Setup host with amgctl (use upstream LMCache and VLLM)
-# The amgctl binary now automatically detects CUDA version and uses appropriate PyTorch index
-RUN amgctl host setup
-
-# Activate uv environment on login
-RUN echo "source /root/amg_stable/.venv/bin/activate" >> /root/.bashrc
-
 # Set working directory
 WORKDIR /root/amg_stable
 
+# Activate uv environment on login
+RUN uv venv .venv
+RUN echo "source /root/amg_stable/.venv/bin/activate" >> /root/.bashrc
+
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# Run AMGCTL at container start time where nvidia runtime is available - supports cross and local builds
+ENTRYPOINT [ "entrypoint.sh" ]
 # Set default command
 CMD ["/bin/bash"] 
