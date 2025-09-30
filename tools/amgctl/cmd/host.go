@@ -79,12 +79,12 @@ var hostConfigCmd = &cobra.Command{
 }
 
 var hostConfigCufileCmd = &cobra.Command{
-	Use:   "cufile",
+	Use:   "cufile [output_path]",
 	Short: "Configure cufile.json for optimal GPU Direct Storage performance",
 	Long: `Copy /etc/cufile.json to the AMG base directory and configure it with optimal settings.
 
 This command will:
-- Copy /etc/cufile.json to ~/amg_stable/cufile.json
+- Copy all contents from /etc/cufile.json
 - Set execution.max_io_threads to 0
 - Set execution.parallel_io to true
 - Set execution.max_io_queue_depth to 128 (or keep higher value if already set)
@@ -94,10 +94,19 @@ This command will:
 - Set properties.gds_rdma_write_support to true
 - Set fs.weka.rdma_write_support to true
 
+The output_path is optional and defaults to ~/amg_stable/cufile.json.
+
 Examples:
-  amgctl host config cufile`,
+  amgctl host config cufile
+  amgctl host config cufile /custom/path/cufile.json
+  amgctl host config cufile ~/my_cufile.json`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runHostConfigCufile()
+		var outputPath string
+		if len(args) > 0 {
+			outputPath = args[0]
+		}
+		return runHostConfigCufile(outputPath)
 	},
 }
 
@@ -1766,7 +1775,7 @@ func runHostLaunch(modelIdentifier string) error {
 			fmt.Println("🔍 Dry Run Mode: Would generate cufile.json for optimal GDS performance")
 		} else {
 			fmt.Println("🔧 Auto-generating cufile.json for optimal GDS performance...")
-			if err := runHostConfigCufile(); err != nil {
+			if err := runHostConfigCufile(""); err != nil {
 				return fmt.Errorf("failed to generate cufile.json: %w", err)
 			}
 			fmt.Println("✅ cufile.json generated successfully")
@@ -2170,7 +2179,8 @@ func executeHostVllmCommand(vllmCmd []string, envVars []string) error {
 }
 
 // runHostConfigCufile copies and configures cufile.json for optimal performance
-func runHostConfigCufile() error {
+// If outputPath is empty, defaults to ~/amg_stable/cufile.json
+func runHostConfigCufile(outputPath string) error {
 	fmt.Println("🔧 Configuring cufile.json for optimal GPU Direct Storage performance...")
 	fmt.Println()
 
@@ -2180,14 +2190,33 @@ func runHostConfigCufile() error {
 		return fmt.Errorf("source file %s does not exist", sourcePath)
 	}
 
-	// Ensure base directory exists
-	basePath := getBasePath()
-	if err := os.MkdirAll(basePath, 0755); err != nil {
-		return fmt.Errorf("failed to create base directory %s: %w", basePath, err)
+	// Determine destination path
+	var destPath string
+	if outputPath != "" {
+		// Expand tilde if present
+		if strings.HasPrefix(outputPath, "~/") {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("failed to get home directory: %w", err)
+			}
+			destPath = filepath.Join(home, outputPath[2:])
+		} else {
+			destPath = outputPath
+		}
+	} else {
+		// Default path
+		basePath := getBasePath()
+		if err := os.MkdirAll(basePath, 0755); err != nil {
+			return fmt.Errorf("failed to create base directory %s: %w", basePath, err)
+		}
+		destPath = filepath.Join(basePath, "cufile.json")
 	}
 
-	// Define destination path
-	destPath := filepath.Join(basePath, "cufile.json")
+	// Ensure destination directory exists
+	destDir := filepath.Dir(destPath)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory %s: %w", destDir, err)
+	}
 
 	// Read and parse source file
 	fmt.Printf("📖 Reading source file: %s\n", sourcePath)
@@ -2196,9 +2225,9 @@ func runHostConfigCufile() error {
 		return fmt.Errorf("failed to read source file %s: %w", sourcePath, err)
 	}
 
-	// Strip comments and parse JSON
+	// Strip comments and parse JSON as a map to preserve all fields
 	cleanData := stripJSONComments(sourceData)
-	var config CuFileConfig
+	var config map[string]interface{}
 	if err := json.Unmarshal(cleanData, &config); err != nil {
 		return fmt.Errorf("failed to parse source file %s: %w", sourcePath, err)
 	}
@@ -2234,62 +2263,120 @@ func runHostConfigCufile() error {
 	// Configure the values according to requirements
 	fmt.Println("⚙️  Configuring optimal settings...")
 
+	// Helper function to get nested map, creating if necessary
+	ensureMap := func(parent map[string]interface{}, key string) map[string]interface{} {
+		if val, ok := parent[key]; ok {
+			if m, ok := val.(map[string]interface{}); ok {
+				return m
+			}
+		}
+		newMap := make(map[string]interface{})
+		parent[key] = newMap
+		return newMap
+	}
+
+	// Helper function to get int value from map
+	getInt := func(m map[string]interface{}, key string) int {
+		if val, ok := m[key]; ok {
+			switch v := val.(type) {
+			case int:
+				return v
+			case float64:
+				return int(v)
+			}
+		}
+		return 0
+	}
+
+	// Helper function to get bool value from map
+	getBool := func(m map[string]interface{}, key string) bool {
+		if val, ok := m[key]; ok {
+			if b, ok := val.(bool); ok {
+				return b
+			}
+		}
+		return false
+	}
+
+	// Ensure nested structures exist
+	execution := ensureMap(config, "execution")
+	properties := ensureMap(config, "properties")
+	fs := ensureMap(config, "fs")
+	weka := ensureMap(fs, "weka")
+
 	// execution.max_io_threads to be 0
-	if config.Execution.MaxIOThreads != 0 {
-		fmt.Printf("  Setting execution.max_io_threads: %d → 0\n", config.Execution.MaxIOThreads)
-		config.Execution.MaxIOThreads = 0
+	currentMaxIOThreads := getInt(execution, "max_io_threads")
+	if currentMaxIOThreads != 0 {
+		fmt.Printf("  Setting execution.max_io_threads: %d → 0\n", currentMaxIOThreads)
+		execution["max_io_threads"] = 0
 	} else {
 		fmt.Println("  execution.max_io_threads: already set to 0 ✅")
 	}
 
 	// execution.parallel_io to be true
-	if !config.Execution.ParallelIO {
-		fmt.Printf("  Setting execution.parallel_io: %t → true\n", config.Execution.ParallelIO)
-		config.Execution.ParallelIO = true
+	currentParallelIO := getBool(execution, "parallel_io")
+	if !currentParallelIO {
+		fmt.Printf("  Setting execution.parallel_io: %t → true\n", currentParallelIO)
+		execution["parallel_io"] = true
 	} else {
 		fmt.Println("  execution.parallel_io: already set to true ✅")
 	}
 
 	// execution.max_io_queue_depth to be 128 (or keep higher)
-	if config.Execution.MaxIOQueueDepth < 128 {
-		fmt.Printf("  Setting execution.max_io_queue_depth: %d → 128\n", config.Execution.MaxIOQueueDepth)
-		config.Execution.MaxIOQueueDepth = 128
+	currentMaxIOQueueDepth := getInt(execution, "max_io_queue_depth")
+	if currentMaxIOQueueDepth < 128 {
+		fmt.Printf("  Setting execution.max_io_queue_depth: %d → 128\n", currentMaxIOQueueDepth)
+		execution["max_io_queue_depth"] = 128
 	} else {
-		fmt.Printf("  execution.max_io_queue_depth: keeping higher value %d ✅\n", config.Execution.MaxIOQueueDepth)
+		fmt.Printf("  execution.max_io_queue_depth: keeping higher value %d ✅\n", currentMaxIOQueueDepth)
 	}
 
 	// execution.max_request_parallelism to be 4 (or keep higher)
-	if config.Execution.MaxRequestParallelism < 4 {
-		fmt.Printf("  Setting execution.max_request_parallelism: %d → 4\n", config.Execution.MaxRequestParallelism)
-		config.Execution.MaxRequestParallelism = 4
+	currentMaxRequestParallelism := getInt(execution, "max_request_parallelism")
+	if currentMaxRequestParallelism < 4 {
+		fmt.Printf("  Setting execution.max_request_parallelism: %d → 4\n", currentMaxRequestParallelism)
+		execution["max_request_parallelism"] = 4
 	} else {
-		fmt.Printf("  execution.max_request_parallelism: keeping higher value %d ✅\n", config.Execution.MaxRequestParallelism)
+		fmt.Printf("  execution.max_request_parallelism: keeping higher value %d ✅\n", currentMaxRequestParallelism)
 	}
 
 	// properties.rdma_dev_addr_list to be the list of UP IB IPs
-	fmt.Printf("  Setting properties.rdma_dev_addr_list: %v → %v\n", config.Properties.RdmaDevAddrList, upIPs)
-	config.Properties.RdmaDevAddrList = upIPs
+	var currentRdmaDevAddrList []string
+	if val, ok := properties["rdma_dev_addr_list"]; ok {
+		if arr, ok := val.([]interface{}); ok {
+			for _, item := range arr {
+				if str, ok := item.(string); ok {
+					currentRdmaDevAddrList = append(currentRdmaDevAddrList, str)
+				}
+			}
+		}
+	}
+	fmt.Printf("  Setting properties.rdma_dev_addr_list: %v → %v\n", currentRdmaDevAddrList, upIPs)
+	properties["rdma_dev_addr_list"] = upIPs
 
 	// properties.allow_compat_mode to be true
-	if !config.Properties.AllowCompatMode {
-		fmt.Printf("  Setting properties.allow_compat_mode: %t → true\n", config.Properties.AllowCompatMode)
-		config.Properties.AllowCompatMode = true
+	currentAllowCompatMode := getBool(properties, "allow_compat_mode")
+	if !currentAllowCompatMode {
+		fmt.Printf("  Setting properties.allow_compat_mode: %t → true\n", currentAllowCompatMode)
+		properties["allow_compat_mode"] = true
 	} else {
 		fmt.Println("  properties.allow_compat_mode: already set to true ✅")
 	}
 
 	// properties.gds_rdma_write_support to be true
-	if !config.Properties.GdsRdmaWriteSupport {
-		fmt.Printf("  Setting properties.gds_rdma_write_support: %t → true\n", config.Properties.GdsRdmaWriteSupport)
-		config.Properties.GdsRdmaWriteSupport = true
+	currentGdsRdmaWriteSupport := getBool(properties, "gds_rdma_write_support")
+	if !currentGdsRdmaWriteSupport {
+		fmt.Printf("  Setting properties.gds_rdma_write_support: %t → true\n", currentGdsRdmaWriteSupport)
+		properties["gds_rdma_write_support"] = true
 	} else {
 		fmt.Println("  properties.gds_rdma_write_support: already set to true ✅")
 	}
 
 	// fs.weka.rdma_write_support to be true
-	if !config.FS.Weka.RdmaWriteSupport {
-		fmt.Printf("  Setting fs.weka.rdma_write_support: %t → true\n", config.FS.Weka.RdmaWriteSupport)
-		config.FS.Weka.RdmaWriteSupport = true
+	currentRdmaWriteSupport := getBool(weka, "rdma_write_support")
+	if !currentRdmaWriteSupport {
+		fmt.Printf("  Setting fs.weka.rdma_write_support: %t → true\n", currentRdmaWriteSupport)
+		weka["rdma_write_support"] = true
 	} else {
 		fmt.Println("  fs.weka.rdma_write_support: already set to true ✅")
 	}
