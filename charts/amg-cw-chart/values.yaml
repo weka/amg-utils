@@ -48,7 +48,7 @@ wekaAmg:
   
   # Image configuration
   image:
-    repository: sdimitro509/amg
+    repository: sdimitro509/amg-poc
     tag: "latest"
     pullPolicy: IfNotPresent
   
