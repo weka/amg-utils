@@ -67,13 +67,13 @@ get_version() {
     echo "v0.1.18"
 }
 
-# Build Docker image locally
+# Build Docker image locally (both variants)
 build_local() {
     local version="$1"
     local docker_context="./docker"
-    local image_name="sdimitro509/amg"
+    local base_image_name="sdimitro509/amg"
     
-    print_info "Building Docker image locally for version: $version"
+    print_info "Building Docker images locally for version: $version"
     print_info "Docker context: $docker_context"
     
     # Check if docker context directory exists
@@ -86,30 +86,56 @@ build_local() {
     # Build arguments
     local build_args="--build-arg AMG_UTILS_VERSION=$version"
     
-    # Tags for local build
-    local tags="-t $image_name:$version"
-    # Add local- prefix for version tags to distinguish from official releases
+    # Build POC variant (full setup)
+    local poc_image_name="${base_image_name}-poc"
+    local poc_tags="-t $poc_image_name:$version"
     if [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        tags="$tags -t $image_name:local-$version"
+        poc_tags="$poc_tags -t $poc_image_name:local-$version"
     fi
     
-    print_info "Building Docker image..."
+    print_info "Building POC variant (full setup with amgctl host setup)..."
     docker build \
         $build_args \
-        $tags \
+        --target poc \
+        $poc_tags \
         "$docker_context"
     
-    print_success "Successfully built Docker image:"
-    print_success "  - $image_name:$version"
+    print_success "Successfully built POC image:"
+    print_success "  - $poc_image_name:$version"
     if [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        print_success "  - $image_name:local-$version"
+        print_success "  - $poc_image_name:local-$version"
     fi
     
-    print_info "To run the image:"
-    print_info "  docker run -it --rm $image_name:$version"
+    # Build Vanilla variant (base only)
+    local vanilla_image_name="${base_image_name}-vanilla"
+    local vanilla_tags="-t $vanilla_image_name:$version"
+    if [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        vanilla_tags="$vanilla_tags -t $vanilla_image_name:local-$version"
+    fi
     
-    print_info "To test with GPU support:"
-    print_info "  docker run -it --rm --gpus all --runtime nvidia $image_name:$version"
+    print_info "Building Vanilla variant (base with amgctl only)..."
+    docker build \
+        $build_args \
+        --target vanilla \
+        $vanilla_tags \
+        "$docker_context"
+    
+    print_success "Successfully built Vanilla image:"
+    print_success "  - $vanilla_image_name:$version"
+    if [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        print_success "  - $vanilla_image_name:local-$version"
+    fi
+    
+    echo ""
+    print_success "All images built successfully!"
+    echo ""
+    print_info "To run the POC image (full setup):"
+    print_info "  docker run -it --rm $poc_image_name:$version"
+    print_info "  docker run -it --rm --gpus all --runtime nvidia $poc_image_name:$version"
+    echo ""
+    print_info "To run the Vanilla image (base only):"
+    print_info "  docker run -it --rm $vanilla_image_name:$version"
+    print_info "  docker run -it --rm --gpus all --runtime nvidia $vanilla_image_name:$version"
 }
 
 # Main execution

@@ -104,13 +104,13 @@ docker_login() {
     print_success "Successfully logged in to Docker Hub"
 }
 
-# Build and push Docker image
+# Build and push Docker images (both variants)
 build_and_push() {
     local version="$1"
     local docker_context="./docker"
-    local image_name="sdimitro509/amg"
+    local base_image_name="sdimitro509/amg"
     
-    print_info "Building Docker image for version: $version"
+    print_info "Building Docker images for version: $version"
     print_info "Docker context: $docker_context"
     
     # Check if docker context directory exists
@@ -131,32 +131,64 @@ build_and_push() {
     # Build arguments
     local build_args="--build-arg AMG_UTILS_VERSION=$version"
     
-    # Tags
-    local tags="-t $image_name:$version -t $image_name:latest"
+    # Build and push POC variant (full setup)
+    local poc_image_name="${base_image_name}-poc"
+    local poc_tags="-t $poc_image_name:$version -t $poc_image_name:latest"
     
+    print_info "Building and pushing POC variant (full setup with amgctl host setup)..."
     if [ "${USE_BUILDX:-true}" = "true" ]; then
-        print_info "Building and pushing with Docker Buildx..."
         docker buildx build \
             --platform linux/amd64 \
             --push \
+            --target poc \
             $build_args \
-            $tags \
+            $poc_tags \
             "$docker_context"
     else
-        print_info "Building with regular Docker..."
         docker build \
+            --target poc \
             $build_args \
-            $tags \
+            $poc_tags \
             "$docker_context"
         
-        print_info "Pushing images..."
-        docker push "$image_name:$version"
-        docker push "$image_name:latest"
+        docker push "$poc_image_name:$version"
+        docker push "$poc_image_name:latest"
     fi
     
-    print_success "Successfully built and pushed Docker images:"
-    print_success "  - $image_name:$version"
-    print_success "  - $image_name:latest"
+    print_success "Successfully built and pushed POC images:"
+    print_success "  - $poc_image_name:$version"
+    print_success "  - $poc_image_name:latest"
+    
+    # Build and push Vanilla variant (base only)
+    local vanilla_image_name="${base_image_name}-vanilla"
+    local vanilla_tags="-t $vanilla_image_name:$version -t $vanilla_image_name:latest"
+    
+    print_info "Building and pushing Vanilla variant (base with amgctl only)..."
+    if [ "${USE_BUILDX:-true}" = "true" ]; then
+        docker buildx build \
+            --platform linux/amd64 \
+            --push \
+            --target vanilla \
+            $build_args \
+            $vanilla_tags \
+            "$docker_context"
+    else
+        docker build \
+            --target vanilla \
+            $build_args \
+            $vanilla_tags \
+            "$docker_context"
+        
+        docker push "$vanilla_image_name:$version"
+        docker push "$vanilla_image_name:latest"
+    fi
+    
+    print_success "Successfully built and pushed Vanilla images:"
+    print_success "  - $vanilla_image_name:$version"
+    print_success "  - $vanilla_image_name:latest"
+    
+    echo ""
+    print_success "All images built and pushed successfully!"
 }
 
 # Cleanup function
@@ -198,9 +230,10 @@ main() {
     
     # Confirm before proceeding
     echo
-    print_warning "About to build and push Docker image:"
+    print_warning "About to build and push Docker images:"
     echo "  Version: $version"
-    echo "  Images: sdimitro509/amg:$version, sdimitro509/amg:latest"
+    echo "  POC Images: sdimitro509/amg-poc:$version, sdimitro509/amg-poc:latest"
+    echo "  Vanilla Images: sdimitro509/amg-vanilla:$version, sdimitro509/amg-vanilla:latest"
     echo "  Registry: Docker Hub"
     echo
     read -p "Do you want to continue? (y/N): " -n 1 -r
@@ -214,8 +247,10 @@ main() {
     docker_login
     build_and_push "$version"
     
-    print_success "Docker image build and push completed successfully!"
-    print_info "You can now run: docker pull sdimitro509/amg:$version"
+    print_success "Docker images build and push completed successfully!"
+    print_info "You can now run:"
+    print_info "  docker pull sdimitro509/amg-poc:$version"
+    print_info "  docker pull sdimitro509/amg-vanilla:$version"
 }
 
 # Run main function with all arguments

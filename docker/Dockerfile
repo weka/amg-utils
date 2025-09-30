@@ -1,5 +1,14 @@
-# Use NVIDIA CUDA 12.9.1 development image for Ubuntu 24.04
-FROM nvidia/cuda:12.9.1-devel-ubuntu24.04
+# ==============================================================================
+# Multi-stage Dockerfile for AMG Utils
+# Creates two image variants:
+#   - amg-vanilla: Base image with amgctl installed
+#   - amg-poc: Full image with amgctl host setup and environment configured
+# ==============================================================================
+
+# ==============================================================================
+# Base stage: Common dependencies and amgctl installation
+# ==============================================================================
+FROM nvidia/cuda:12.9.1-devel-ubuntu24.04 AS base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -65,6 +74,22 @@ ENV PATH="/root/.local/bin:${PATH}"
 # Download and install amgctl
 RUN wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION}/amgctl-linux-amd64 -O /usr/local/bin/amgctl && \
     chmod +x /usr/local/bin/amgctl
+
+# ==============================================================================
+# Vanilla variant: Just the base image with amgctl installed
+# ==============================================================================
+FROM base AS vanilla
+
+# Set working directory
+WORKDIR /root
+
+# Set default command
+CMD ["/bin/bash"]
+
+# ==============================================================================
+# POC variant: Full setup with amgctl host setup and environment configured
+# ==============================================================================
+FROM base AS poc
 
 # Setup host with amgctl (use upstream LMCache and VLLM)
 # The amgctl binary now automatically detects CUDA version and uses appropriate PyTorch index
