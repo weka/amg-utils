@@ -20,7 +20,7 @@ ENV CUDA_HOME=/usr/local/cuda
 ENV NVIDIA_GDS=enabled
 
 # amg-utils version
-ARG AMG_UTILS_VERSION=v0.1.16
+ARG AMG_UTILS_VERSION=v0.1.19
 
 # Convenience variables
 ENV PATH=/usr/local/cuda/gds/tools:${PATH}
