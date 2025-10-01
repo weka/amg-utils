@@ -68,7 +68,8 @@ var hostPreFlightCmd = &cobra.Command{
 	SilenceUsage: true, // Don't show help when validation fails
 	RunE: func(cmd *cobra.Command, args []string) error {
 		full, _ := cmd.Flags().GetBool("full")
-		return runHostPreFlight(full)
+		bareSetup, _ := cmd.Flags().GetBool("bare-setup")
+		return runHostPreFlight(full, bareSetup)
 	},
 }
 
@@ -150,6 +151,45 @@ Examples:
 	},
 }
 
+var hostGdsCmd = &cobra.Command{
+	Use:   "gds",
+	Short: "GPU Direct Storage (GDS) management commands",
+	Long:  `Manage GPU Direct Storage configuration and setup for AMG.`,
+}
+
+var hostGdsSetupCmd = &cobra.Command{
+	Use:   "setup",
+	Short: "Set up GPU Direct Storage configuration",
+	Long: `Set up GPU Direct Storage by creating and configuring weka-cufile.json for optimal performance.
+
+This command will:
+- Copy all contents from /etc/cufile.json
+- Set execution.max_io_threads to 0
+- Set execution.parallel_io to true
+- Set execution.max_io_queue_depth to 128 (or keep higher value if already set)
+- Set execution.max_request_parallelism to 4 (or keep higher value if already set)
+- Set properties.rdma_dev_addr_list to the list of UP InfiniBand IP addresses
+- Set properties.allow_compat_mode to true
+- Set properties.gds_rdma_write_support to true
+- Set fs.weka.rdma_write_support to true
+
+By default, the weka-cufile.json is created in the current directory, and all output
+is logged to both stdout and amgctl-gds-setup.log in the same directory.
+
+Examples:
+  amgctl host gds setup
+  amgctl host gds setup --config-dir /custom/path
+  amgctl host gds setup --pre-flight
+  amgctl host gds setup --config-dir /custom/path --pre-flight`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		configDir, _ := cmd.Flags().GetString("config-dir")
+		preFlight, _ := cmd.Flags().GetBool("pre-flight")
+		bareSetup, _ := cmd.Flags().GetBool("bare-setup")
+		return runHostGdsSetup(configDir, preFlight, bareSetup)
+	},
+}
+
 func init() {
 	hostCmd.AddCommand(hostSetupCmd)
 	hostCmd.AddCommand(hostStatusCmd)
@@ -158,9 +198,18 @@ func init() {
 	hostCmd.AddCommand(hostPreFlightCmd)
 	hostCmd.AddCommand(hostConfigCmd)
 	hostCmd.AddCommand(hostLaunchCmd)
+	hostCmd.AddCommand(hostGdsCmd)
 
 	// Add config subcommands
 	hostConfigCmd.AddCommand(hostConfigCufileCmd)
+
+	// Add gds subcommands
+	hostGdsCmd.AddCommand(hostGdsSetupCmd)
+
+	// Add flags to hostGdsSetupCmd
+	hostGdsSetupCmd.Flags().String("config-dir", "", "Directory to output weka-cufile.json and amgctl-gds-setup.log (defaults to current directory)")
+	hostGdsSetupCmd.Flags().Bool("pre-flight", false, "Run 'amgctl host pre-flight --full' after creating weka-cufile.json")
+	hostGdsSetupCmd.Flags().Bool("bare-setup", false, "Check for uv and git commands during pre-flight (needed for bare-metal setup)")
 
 	// Add flags to hostSetupCmd
 	hostSetupCmd.Flags().String("lmcache-repo", repoURL, "Alternative LMCache repository URL")
@@ -173,6 +222,7 @@ func init() {
 
 	// Add flags to hostPreFlightCmd
 	hostPreFlightCmd.Flags().Bool("full", false, "Run comprehensive checks including GPU Direct Storage (GDS) validation")
+	hostPreFlightCmd.Flags().Bool("bare-setup", false, "Check for uv and git commands (needed for bare-metal setup)")
 
 	// Add flags to hostClearCmd
 	hostClearCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt and proceed with deletion")
@@ -346,18 +396,21 @@ type CuFileConfig struct {
 }
 
 // runHostSystemChecks performs shared system checks for both setup and pre-flight commands
-func runHostSystemChecks() error {
+// bareSetup: if true, checks for uv and git commands (needed for setup)
+func runHostSystemChecks(bareSetup bool) error {
 	fmt.Println("--- System Checks ---")
 
-	if !commandExists("uv") {
-		return fmt.Errorf("uv command not found. Please install uv: https://docs.astral.sh/uv/getting-started/installation/")
-	}
-	fmt.Println("✅ uv command found")
+	if bareSetup {
+		if !commandExists("uv") {
+			return fmt.Errorf("uv command not found. Please install uv: https://docs.astral.sh/uv/getting-started/installation/")
+		}
+		fmt.Println("✅ uv command found")
 
-	if !commandExists("git") {
-		return fmt.Errorf("git command not found. Please install Git")
+		if !commandExists("git") {
+			return fmt.Errorf("git command not found. Please install Git")
+		}
+		fmt.Println("✅ git command found")
 	}
-	fmt.Println("✅ git command found")
 
 	if err := checkCuFileConfig(); err != nil {
 		// This is a warning, not a fatal error
@@ -390,18 +443,28 @@ func stripJSONComments(jsonData []byte) []byte {
 }
 
 // checkCuFileConfig validates cufile.json configuration
-// First checks in basepath directory, then fallback to /etc/cufile.json
+// First checks CUFILE_ENV_PATH_JSON env var, then basepath directory, then fallback to /etc/cufile.json
 func checkCuFileConfig() error {
-	// Try basepath directory first
-	basePath := getBasePath()
-	cufilePath := filepath.Join(basePath, "cufile.json")
+	var cufilePath string
 
-	// Check if cufile.json exists in basepath directory
-	if _, err := os.Stat(cufilePath); os.IsNotExist(err) {
-		// Fallback to /etc/cufile.json if not found in basepath
-		cufilePath = "/etc/cufile.json"
+	// Check if CUFILE_ENV_PATH_JSON is already set (e.g., by gds setup)
+	if envPath := os.Getenv("CUFILE_ENV_PATH_JSON"); envPath != "" {
+		cufilePath = envPath
 		if _, err := os.Stat(cufilePath); os.IsNotExist(err) {
-			return fmt.Errorf("cufile.json not found at %s or /etc/cufile.json. Consider configuring CUDA file operations if needed", filepath.Join(basePath, "cufile.json"))
+			return fmt.Errorf("cufile.json not found at CUFILE_ENV_PATH_JSON=%s", cufilePath)
+		}
+	} else {
+		// Try basepath directory first
+		basePath := getBasePath()
+		cufilePath = filepath.Join(basePath, "cufile.json")
+
+		// Check if cufile.json exists in basepath directory
+		if _, err := os.Stat(cufilePath); os.IsNotExist(err) {
+			// Fallback to /etc/cufile.json if not found in basepath
+			cufilePath = "/etc/cufile.json"
+			if _, err := os.Stat(cufilePath); os.IsNotExist(err) {
+				return fmt.Errorf("cufile.json not found at %s or /etc/cufile.json. Consider configuring CUDA file operations if needed", filepath.Join(basePath, "cufile.json"))
+			}
 		}
 	}
 
@@ -619,8 +682,8 @@ func runHostSetup(cmd *cobra.Command) error {
 func runLinuxSetup(state *SetupState) error {
 	fmt.Println("🐧 Running Linux setup...")
 
-	// Run shared system checks
-	if err := runHostSystemChecks(); err != nil {
+	// Run shared system checks (always check for uv/git during setup)
+	if err := runHostSystemChecks(true); err != nil {
 		return err
 	}
 
@@ -1018,7 +1081,7 @@ func runHostUpdate() error {
 	return nil
 }
 
-func runHostPreFlight(full bool) error {
+func runHostPreFlight(full bool, bareSetup bool) error {
 	if full {
 		fmt.Println("🔍 Running comprehensive AMG pre-flight checks...")
 	} else {
@@ -1031,7 +1094,7 @@ func runHostPreFlight(full bool) error {
 	}
 
 	// Run system checks
-	if err := runHostSystemChecks(); err != nil {
+	if err := runHostSystemChecks(bareSetup); err != nil {
 		return err
 	}
 
@@ -1073,14 +1136,33 @@ func runGDSChecks() error {
 	cmd := exec.Command(gdsCheckPath, "-p")
 
 	// Check for cufile.json and add CUFILE_ENV_PATH_JSON if it exists
-	basePath := getBasePath()
-	cufilePath := filepath.Join(basePath, "cufile.json")
-	if _, err := os.Stat(cufilePath); err == nil {
-		// Set environment variable for gdscheck to use our cufile.json
+	// First check if CUFILE_ENV_PATH_JSON is already set (e.g., by gds setup)
+	var cufilePath string
+	if envPath := os.Getenv("CUFILE_ENV_PATH_JSON"); envPath != "" {
+		cufilePath = envPath
+		fmt.Printf("✅ Using CUFILE_ENV_PATH_JSON=%s for gdscheck\n", cufilePath)
+	} else {
+		basePath := getBasePath()
+		cufilePath = filepath.Join(basePath, "cufile.json")
+		if _, err := os.Stat(cufilePath); err == nil {
+			fmt.Printf("✅ Found cufile.json, setting CUFILE_ENV_PATH_JSON=%s for gdscheck\n", cufilePath)
+		} else {
+			cufilePath = "" // No cufile found
+		}
+	}
+
+	// Set environment for gdscheck if we have a cufile path
+	if cufilePath != "" {
 		env := os.Environ()
-		env = append(env, fmt.Sprintf("CUFILE_ENV_PATH_JSON=%s", cufilePath))
-		cmd.Env = env
-		fmt.Printf("✅ Found cufile.json, setting CUFILE_ENV_PATH_JSON=%s for gdscheck\n", cufilePath)
+		// Remove any existing CUFILE_ENV_PATH_JSON from environment
+		var filteredEnv []string
+		for _, e := range env {
+			if !strings.HasPrefix(e, "CUFILE_ENV_PATH_JSON=") {
+				filteredEnv = append(filteredEnv, e)
+			}
+		}
+		filteredEnv = append(filteredEnv, fmt.Sprintf("CUFILE_ENV_PATH_JSON=%s", cufilePath))
+		cmd.Env = filteredEnv
 	}
 
 	output, err := cmd.Output()
@@ -2398,6 +2480,332 @@ func runHostConfigCufile(outputPath string) error {
 	fmt.Println()
 	fmt.Println("🎉 cufile.json configuration completed!")
 	fmt.Println("💡 vLLM will automatically use this configuration when CUFILE_ENV_PATH_JSON is set")
+
+	return nil
+}
+
+// logWriter wraps multiple io.Writers to write to both stdout and a log file
+type logWriter struct {
+	stdout  *os.File
+	logFile *os.File
+}
+
+func (lw *logWriter) Write(p []byte) (n int, err error) {
+	// Write to stdout
+	n1, err1 := lw.stdout.Write(p)
+	// Write to log file
+	n2, err2 := lw.logFile.Write(p)
+
+	// Return the minimum bytes written and any error
+	if err1 != nil {
+		return n1, err1
+	}
+	if err2 != nil {
+		return n2, err2
+	}
+	if n1 < n2 {
+		return n1, nil
+	}
+	return n2, nil
+}
+
+// runHostGdsSetup sets up GPU Direct Storage configuration
+func runHostGdsSetup(configDir string, preFlight bool, bareSetup bool) error {
+	// Determine output directory
+	var outputDir string
+	if configDir != "" {
+		outputDir = configDir
+	} else {
+		// Use current working directory
+		var err error
+		outputDir, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+	}
+
+	// Create output directory if it doesn't exist
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory %s: %w", outputDir, err)
+	}
+
+	// Open log file
+	logFilePath := filepath.Join(outputDir, "amgctl-gds-setup.log")
+	logFile, err := os.Create(logFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to create log file %s: %w", logFilePath, err)
+	}
+	defer func() {
+		if err := logFile.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close log file: %v\n", err)
+		}
+	}()
+
+	// Create logWriter to write to both stdout and log file
+	lw := &logWriter{
+		stdout:  os.Stdout,
+		logFile: logFile,
+	}
+
+	// Redirect fmt output to our logWriter
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		return fmt.Errorf("failed to create pipe: %w", err)
+	}
+	os.Stdout = w
+
+	// Start a goroutine to copy from pipe to our logWriter
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 1024)
+		for {
+			n, err := r.Read(buf)
+			if n > 0 {
+				if _, writeErr := lw.Write(buf[:n]); writeErr != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to write to log: %v\n", writeErr)
+				}
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	// Ensure we restore stdout and close pipe
+	defer func() {
+		if err := w.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close pipe writer: %v\n", err)
+		}
+		<-done
+		os.Stdout = oldStdout
+	}()
+
+	// Determine destination path for weka-cufile.json
+	cufilePath := filepath.Join(outputDir, "weka-cufile.json")
+
+	fmt.Println("🔧 Setting up GPU Direct Storage configuration...")
+	fmt.Println()
+	fmt.Printf("📁 Output directory: %s\n", outputDir)
+	fmt.Printf("📝 Log file: %s\n", logFilePath)
+	fmt.Printf("📄 Cufile path: %s\n", cufilePath)
+	fmt.Println()
+
+	// Check if source file exists
+	sourcePath := "/etc/cufile.json"
+	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		return fmt.Errorf("source file %s does not exist", sourcePath)
+	}
+
+	// Read and parse source file
+	fmt.Printf("📖 Reading source file: %s\n", sourcePath)
+	sourceData, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return fmt.Errorf("failed to read source file %s: %w", sourcePath, err)
+	}
+
+	// Strip comments and parse JSON as a map to preserve all fields
+	cleanData := stripJSONComments(sourceData)
+	var config map[string]interface{}
+	if err := json.Unmarshal(cleanData, &config); err != nil {
+		return fmt.Errorf("failed to parse source file %s: %w", sourcePath, err)
+	}
+
+	fmt.Println("✅ Successfully parsed source cufile.json")
+
+	// Get InfiniBand UP IP addresses
+	fmt.Println("🔍 Detecting InfiniBand network interfaces...")
+	ibInterfaces, err := hardware.GetInfiniBandNetworkInterfaces()
+	if err != nil {
+		return fmt.Errorf("failed to get InfiniBand interfaces: %w", err)
+	}
+
+	var upIPs []string
+	for _, iface := range ibInterfaces {
+		if iface.Status == "up" && iface.IPAddress != "no IP assigned" {
+			// Extract just the IP part (remove CIDR notation if present)
+			ip := iface.IPAddress
+			if strings.Contains(ip, "/") {
+				parts := strings.Split(ip, "/")
+				ip = parts[0]
+			}
+			upIPs = append(upIPs, ip)
+		}
+	}
+
+	if len(upIPs) == 0 {
+		fmt.Println("⚠️  No UP InfiniBand interfaces with IP addresses found")
+	} else {
+		fmt.Printf("✅ Found %d UP InfiniBand interfaces: %v\n", len(upIPs), upIPs)
+	}
+
+	// Configure the values according to requirements
+	fmt.Println("⚙️  Configuring optimal settings...")
+
+	// Helper function to get nested map, creating if necessary
+	ensureMap := func(parent map[string]interface{}, key string) map[string]interface{} {
+		if val, ok := parent[key]; ok {
+			if m, ok := val.(map[string]interface{}); ok {
+				return m
+			}
+		}
+		newMap := make(map[string]interface{})
+		parent[key] = newMap
+		return newMap
+	}
+
+	// Helper function to get int value from map
+	getInt := func(m map[string]interface{}, key string) int {
+		if val, ok := m[key]; ok {
+			switch v := val.(type) {
+			case int:
+				return v
+			case float64:
+				return int(v)
+			}
+		}
+		return 0
+	}
+
+	// Helper function to get bool value from map
+	getBool := func(m map[string]interface{}, key string) bool {
+		if val, ok := m[key]; ok {
+			if b, ok := val.(bool); ok {
+				return b
+			}
+		}
+		return false
+	}
+
+	// Ensure nested structures exist
+	execution := ensureMap(config, "execution")
+	properties := ensureMap(config, "properties")
+	fs := ensureMap(config, "fs")
+	weka := ensureMap(fs, "weka")
+
+	// execution.max_io_threads to be 0
+	currentMaxIOThreads := getInt(execution, "max_io_threads")
+	if currentMaxIOThreads != 0 {
+		fmt.Printf("  Setting execution.max_io_threads: %d → 0\n", currentMaxIOThreads)
+		execution["max_io_threads"] = 0
+	} else {
+		fmt.Println("  execution.max_io_threads: already set to 0 ✅")
+	}
+
+	// execution.parallel_io to be true
+	currentParallelIO := getBool(execution, "parallel_io")
+	if !currentParallelIO {
+		fmt.Printf("  Setting execution.parallel_io: %t → true\n", currentParallelIO)
+		execution["parallel_io"] = true
+	} else {
+		fmt.Println("  execution.parallel_io: already set to true ✅")
+	}
+
+	// execution.max_io_queue_depth to be 128 (or keep higher)
+	currentMaxIOQueueDepth := getInt(execution, "max_io_queue_depth")
+	if currentMaxIOQueueDepth < 128 {
+		fmt.Printf("  Setting execution.max_io_queue_depth: %d → 128\n", currentMaxIOQueueDepth)
+		execution["max_io_queue_depth"] = 128
+	} else {
+		fmt.Printf("  execution.max_io_queue_depth: keeping higher value %d ✅\n", currentMaxIOQueueDepth)
+	}
+
+	// execution.max_request_parallelism to be 4 (or keep higher)
+	currentMaxRequestParallelism := getInt(execution, "max_request_parallelism")
+	if currentMaxRequestParallelism < 4 {
+		fmt.Printf("  Setting execution.max_request_parallelism: %d → 4\n", currentMaxRequestParallelism)
+		execution["max_request_parallelism"] = 4
+	} else {
+		fmt.Printf("  execution.max_request_parallelism: keeping higher value %d ✅\n", currentMaxRequestParallelism)
+	}
+
+	// properties.rdma_dev_addr_list to be the list of UP IB IPs
+	var currentRdmaDevAddrList []string
+	if val, ok := properties["rdma_dev_addr_list"]; ok {
+		if arr, ok := val.([]interface{}); ok {
+			for _, item := range arr {
+				if str, ok := item.(string); ok {
+					currentRdmaDevAddrList = append(currentRdmaDevAddrList, str)
+				}
+			}
+		}
+	}
+	fmt.Printf("  Setting properties.rdma_dev_addr_list: %v → %v\n", currentRdmaDevAddrList, upIPs)
+	properties["rdma_dev_addr_list"] = upIPs
+
+	// properties.allow_compat_mode to be true
+	currentAllowCompatMode := getBool(properties, "allow_compat_mode")
+	if !currentAllowCompatMode {
+		fmt.Printf("  Setting properties.allow_compat_mode: %t → true\n", currentAllowCompatMode)
+		properties["allow_compat_mode"] = true
+	} else {
+		fmt.Println("  properties.allow_compat_mode: already set to true ✅")
+	}
+
+	// properties.gds_rdma_write_support to be true
+	currentGdsRdmaWriteSupport := getBool(properties, "gds_rdma_write_support")
+	if !currentGdsRdmaWriteSupport {
+		fmt.Printf("  Setting properties.gds_rdma_write_support: %t → true\n", currentGdsRdmaWriteSupport)
+		properties["gds_rdma_write_support"] = true
+	} else {
+		fmt.Println("  properties.gds_rdma_write_support: already set to true ✅")
+	}
+
+	// fs.weka.rdma_write_support to be true
+	currentRdmaWriteSupport := getBool(weka, "rdma_write_support")
+	if !currentRdmaWriteSupport {
+		fmt.Printf("  Setting fs.weka.rdma_write_support: %t → true\n", currentRdmaWriteSupport)
+		weka["rdma_write_support"] = true
+	} else {
+		fmt.Println("  fs.weka.rdma_write_support: already set to true ✅")
+	}
+
+	// Write the configured JSON to destination
+	fmt.Printf("💾 Writing configured weka-cufile.json to: %s\n", cufilePath)
+
+	// Marshal with proper indentation
+	outputData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal configuration: %w", err)
+	}
+
+	if err := os.WriteFile(cufilePath, outputData, 0644); err != nil {
+		return fmt.Errorf("failed to write destination file %s: %w", cufilePath, err)
+	}
+
+	fmt.Printf("✅ Successfully created optimized weka-cufile.json at %s\n", cufilePath)
+	fmt.Println()
+	fmt.Println("🎉 GDS setup completed!")
+	fmt.Printf("📝 All output has been logged to: %s\n", logFilePath)
+	fmt.Println()
+
+	// Run pre-flight check if requested
+	if preFlight {
+		fmt.Println("🚀 Running pre-flight checks...")
+		fmt.Println()
+
+		// Set CUFILE_ENV_PATH_JSON environment variable for pre-flight checks
+		oldCufileEnv := os.Getenv("CUFILE_ENV_PATH_JSON")
+		if err := os.Setenv("CUFILE_ENV_PATH_JSON", cufilePath); err != nil {
+			return fmt.Errorf("failed to set CUFILE_ENV_PATH_JSON: %w", err)
+		}
+		defer func() {
+			if oldCufileEnv != "" {
+				if err := os.Setenv("CUFILE_ENV_PATH_JSON", oldCufileEnv); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to restore CUFILE_ENV_PATH_JSON: %v\n", err)
+				}
+			} else {
+				if err := os.Unsetenv("CUFILE_ENV_PATH_JSON"); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to unset CUFILE_ENV_PATH_JSON: %v\n", err)
+				}
+			}
+		}()
+
+		if err := runHostPreFlight(true, bareSetup); err != nil {
+			return fmt.Errorf("pre-flight checks failed: %w", err)
+		}
+	}
 
 	return nil
 }
