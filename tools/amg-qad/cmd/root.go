@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-const version = "0.1.19"
+const version = "0.1.20"
 
 // GetVersion returns the current application version
 func GetVersion() string {
