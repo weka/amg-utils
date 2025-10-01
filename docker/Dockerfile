@@ -14,7 +14,7 @@ FROM nvidia/cuda:12.9.1-devel-ubuntu24.04 AS base
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 # Add support for new architectures here
-ENV TORCH_CUDA_ARCH_LIST="9.0 10.0+PTX"
+ENV TORCH_CUDA_ARCH_LIST="8.0 9.0 10.0+PTX"
 ENV FORCE_CUDA="1"
 ENV CUDA_HOME=/usr/local/cuda
 ENV NVIDIA_GDS=enabled
