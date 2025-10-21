@@ -63,8 +63,8 @@ get_version() {
     fi
     
     # Fallback to a known good version
-    print_warning "Could not detect git tag, using fallback version: v0.1.20"
-    echo "v0.1.20"
+    print_warning "Could not detect git tag, using fallback version: v0.1.21"
+    echo "v0.1.21"
 }
 
 # Build Docker image locally (both variants)
