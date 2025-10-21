@@ -75,6 +75,20 @@ ENV PATH="/root/.local/bin:${PATH}"
 RUN wget https://github.com/weka/amg-utils/releases/download/${AMG_UTILS_VERSION}/amgctl-linux-amd64 -O /usr/local/bin/amgctl && \
     chmod +x /usr/local/bin/amgctl
 
+# Create entrypoint script for container initialization
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Create amg_stable directory if it does not exist\n\
+mkdir -p /root/amg_stable\n\
+\n\
+# Run amgctl host config cufile on first boot\n\
+amgctl host config cufile\n\
+\n\
+# Execute the main command\n\
+exec "$@"' > /usr/local/bin/docker-entrypoint.sh && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # ==============================================================================
 # Vanilla variant: Just the base image with amgctl installed
 # ==============================================================================
@@ -82,6 +96,9 @@ FROM base AS vanilla
 
 # Set working directory
 WORKDIR /root
+
+# Set entrypoint
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Set default command
 CMD ["/bin/bash"]
@@ -100,6 +117,9 @@ RUN echo "source /root/amg_stable/.venv/bin/activate" >> /root/.bashrc
 
 # Set working directory
 WORKDIR /root/amg_stable
+
+# Set entrypoint
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Set default command
 CMD ["/bin/bash"] 
